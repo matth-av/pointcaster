@@ -231,8 +231,13 @@ void streaming_thread_loop(
             [&](const tbb::blocked_range<size_t> &range) {
               for (size_t i = range.begin(); i < range.end(); i++) {
                 const auto &stream = streams_to_serialize[i];
+
+                // TODO this is where serialization options could 
+                // be passed in, like draco codec options maybe
+                // as some serialization options variant or something
                 const auto payload =
                     stream.cloud->serialize(compress && !stream.cloud->empty());
+
                 const auto prefix_size = stream.address.size() + 1;
 
                 auto framed = std::make_shared<std::vector<std::byte>>(

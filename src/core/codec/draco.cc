@@ -67,6 +67,7 @@ std::vector<std::byte> PointCloud::compress() const {
   // compress it
   Encoder encoder;
 
+  // TODO these need to be read from the config options
   // the following speed option prioritises decoding speed over
   // both compression ratio and encoding speed
   encoder.SetSpeedOptions(-1, 10);
