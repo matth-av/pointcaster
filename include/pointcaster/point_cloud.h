@@ -16,8 +16,6 @@
 
 namespace pc {
 
-// Arbitrary per-point attributes, keyed by name.
-
 class PointCloud {
 public:
   std::vector<position> positions;
@@ -25,6 +23,7 @@ public:
 
   position_bounds bounds;
 
+// Arbitrary per-point attributes, keyed by name.
   using attribute_storage =
       std::variant<std::vector<float>, std::vector<scale>>;
   StringMap<attribute_storage> attributes;
