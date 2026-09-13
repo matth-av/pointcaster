@@ -239,15 +239,75 @@ typedef struct {
 } pointreceiver_message;
 
 /**
+ * @brief Storage type of a point attribute's elements.
+ */
+typedef enum {
+  POINTRECEIVER_ATTRIBUTE_FLOAT32 = 0,
+  POINTRECEIVER_ATTRIBUTE_UINT8,
+  POINTRECEIVER_ATTRIBUTE_UINT16,
+  POINTRECEIVER_ATTRIBUTE_UINT32,
+  POINTRECEIVER_ATTRIBUTE_INT16,
+  POINTRECEIVER_ATTRIBUTE_INT32
+} pointreceiver_attribute_type;
+
+/**
+ * @brief A point attribute
+ *
+ * The real value of an element is its raw value multiplied by
+ * @c quantisation_step, which is 1.0 for an attribute stored as float. Both
+ * @c name and @c data are borrowed from the context under the same rule as
+ * the rest of the frame.
+ */
+typedef struct {
+  const char *name;         /**< Borrowed, NUL-terminated attribute name */
+  const void *data;         /**< Borrowed buffer of element_count elements */
+  size_t element_count;     /**< Element count, matching the frame's points */
+  float quantisation_step;  /**< Multiply a raw element by this */
+  uint32_t component_count; /**< Components per element; 1 for a scalar */
+  uint32_t stride;          /**< Bytes between consecutive elements */
+  pointreceiver_attribute_type element_type; /**< Storage type of an element */
+} pointreceiver_attribute;
+
+/**
  * @brief A point cloud frame received from a Pointcaster instance.
  *
- * Both buffers hold @c point_count elements and are borrowed from the context.
+ * The position, colour and attribute buffers hold @c point_count elements.
+ * Everything here is borrowed from the context.
  */
 typedef struct {
   size_t point_count;                        /**< Number of points */
   const pointreceiver_position_t *positions; /**< Borrowed positions buffer */
   const pointreceiver_color_t *colours;      /**< Borrowed colours buffer */
+  const pointreceiver_attribute *attributes; /**< Borrowed attribute table */
+  size_t attribute_count;                    /**< Entries in that table */
 } pointreceiver_point_cloud_frame;
+
+/**
+ * @brief Finds an attribute in a cloud by name.
+ *
+ * @param frame Frame previously filled by pointreceiver_dequeue_point_cloud.
+ * @param name Attribute name to match exactly.
+ * @return Borrowed pointer into the frame's table, or NULL if absent.
+ */
+POINTRECEIVER_EXPORT const pointreceiver_attribute *
+pointreceiver_find_attribute(const pointreceiver_point_cloud_frame *frame,
+                             const char *name);
+
+/**
+ * @brief Copies an attribute out as float values.
+ *
+ * Handles quantisation/precision step while converting. Writes
+ * @c element_count * @c component_count floats, components of one element
+ * next to each other.
+ *
+ * @param attribute Attribute taken from a frame's table.
+ * @param[out] out Buffer receiving the converted values.
+ * @param out_capacity Number of floats @p out can hold.
+ * @return POINTRECEIVER_OK, or POINTRECEIVER_ERROR_INVALID_ARGUMENT if a
+ * required pointer was NULL or @p out was too small to hold them all.
+ */
+POINTRECEIVER_EXPORT pointreceiver_status pointreceiver_attribute_copy_floats(
+    const pointreceiver_attribute *attribute, float *out, size_t out_capacity);
 
 /**
  * @brief Returns a short human-readable description of a status code.

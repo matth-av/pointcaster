@@ -26,6 +26,7 @@
 #include <string_view>
 #include <sys/types.h>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <util/string_map.h>
@@ -72,6 +73,7 @@ struct PointCloudFrame {
   std::shared_ptr<const PointCloud> incoming_cloud;
   // the cloud being used by the caller that dequeues
   std::shared_ptr<const PointCloud> current_cloud;
+  std::vector<pointreceiver_attribute> current_attributes;
 };
 
 using MessageFrame = std::pair<std::string, ConfigValue>;
@@ -154,6 +156,26 @@ static_assert(sizeof(pointreceiver_color_t) == sizeof(pc::color));
 static_assert(alignof(pointreceiver_color_t) == alignof(pc::color));
 static_assert(offsetof(pointreceiver_color_t, r) == offsetof(pc::color, r));
 static_assert(offsetof(pointreceiver_color_t, a) == offsetof(pc::color, a));
+
+// the scalar widths the api can name, kept in step with
+// pointreceiver_attribute_type
+template <typename Scalar> constexpr pointreceiver_attribute_type wire_type() {
+  if constexpr (std::is_same_v<Scalar, float>) {
+    return POINTRECEIVER_ATTRIBUTE_FLOAT32;
+  } else if constexpr (std::is_same_v<Scalar, std::uint8_t>) {
+    return POINTRECEIVER_ATTRIBUTE_UINT8;
+  } else if constexpr (std::is_same_v<Scalar, std::uint16_t>) {
+    return POINTRECEIVER_ATTRIBUTE_UINT16;
+  } else if constexpr (std::is_same_v<Scalar, std::uint32_t>) {
+    return POINTRECEIVER_ATTRIBUTE_UINT32;
+  } else if constexpr (std::is_same_v<Scalar, std::int16_t>) {
+    return POINTRECEIVER_ATTRIBUTE_INT16;
+  } else if constexpr (std::is_same_v<Scalar, std::int32_t>) {
+    return POINTRECEIVER_ATTRIBUTE_INT32;
+  } else {
+    static_assert(false, "attribute scalar has no wire type");
+  }
+}
 
 bool copy_to_buffer(char *destination, size_t capacity,
                     std::string_view source) {
@@ -608,22 +630,24 @@ pointreceiver_status pointreceiver_dequeue_point_cloud(
   }
 
   return exception_boundary("pointreceiver_dequeue_point_cloud", [&] {
-    std::unique_lock lock(ctx->point_cloud_stream_mutex);
+    std::unique_lock point_cloud_stream_access(ctx->point_cloud_stream_mutex);
 
     auto oldest_pending = ctx->point_cloud_frames.end();
 
-    ctx->point_cloud_stream_cv.wait_for(lock, milliseconds(timeout_ms), [&] {
-      auto pending_frames = ctx->point_cloud_frames |
-                            std::views::filter([](const auto &frame_entry) {
-                              return frame_entry.second.pending;
-                            });
-      const auto oldest = std::ranges::min_element(
-          pending_frames, {},
-          [](const auto &frame_entry) { return frame_entry.second.timestamp; });
-      if (oldest == pending_frames.end()) return false;
-      oldest_pending = oldest.base();
-      return true;
-    });
+    ctx->point_cloud_stream_cv.wait_for(
+        point_cloud_stream_access, milliseconds(timeout_ms), [&] {
+          auto pending_frames = ctx->point_cloud_frames |
+                                std::views::filter([](const auto &frame_entry) {
+                                  return frame_entry.second.pending;
+                                });
+          const auto oldest = std::ranges::min_element(
+              pending_frames, {}, [](const auto &frame_entry) {
+                return frame_entry.second.timestamp;
+              });
+          if (oldest == pending_frames.end()) return false;
+          oldest_pending = oldest.base();
+          return true;
+        });
 
     if (oldest_pending == ctx->point_cloud_frames.end()) {
       return POINTRECEIVER_ERROR_TIMEOUT;
@@ -633,17 +657,137 @@ pointreceiver_status pointreceiver_dequeue_point_cloud(
     frame.pending = false;
     frame.current_cloud = std::move(frame.incoming_cloud);
     const auto cloud = frame.current_cloud;
+
+    auto &attributes = frame.current_attributes;
+    attributes.clear();
+    attributes.reserve(cloud->attributes.size());
+
+    for (const auto &[name, storage] : cloud->attributes) {
+      std::visit(
+          [&](const auto &values) {
+            using element = typename std::decay_t<decltype(values)>::value_type;
+
+            pointreceiver_attribute attribute{
+                .name = name.c_str(),
+                .data = values.data(),
+                .element_count = values.size(),
+                .quantisation_step = 1.0f,
+                .component_count = 1,
+                .stride = static_cast<uint32_t>(sizeof(element))};
+
+            if constexpr (requires {
+                            typename element::storage_type;
+                            element::step_value;
+                          }) {
+              // a real value quantised into an integer, as basic_scale does
+              attribute.element_type =
+                  wire_type<typename element::storage_type>();
+              attribute.quantisation_step = element::step_value;
+
+            } else if constexpr (std::is_arithmetic_v<element>) {
+              attribute.element_type = wire_type<element>();
+
+            } else if constexpr (requires(element value) {
+                                   value.x;
+                                   value.y;
+                                 }) {
+              // vectors like float3, int2 etc.
+              using component = decltype(element::x);
+              attribute.element_type = wire_type<component>();
+              attribute.component_count =
+                  static_cast<uint32_t>(sizeof(element) / sizeof(component));
+            } else {
+              static_assert(false, "attribute element has no description");
+            }
+
+            attributes.push_back(attribute);
+          },
+          storage);
+    }
+
+    std::ranges::sort(attributes, {}, [](const auto &attribute) {
+      return std::string_view{attribute.name};
+    });
+
+    const auto *attributes_ptr = attributes.data();
+    const auto attribute_count = attributes.size();
     copy_to_buffer(out_address, address_capacity, oldest_pending->first);
 
-    lock.unlock();
+    point_cloud_stream_access.unlock();
 
     out_frame->point_count = cloud->size();
     out_frame->positions = reinterpret_cast<const pointreceiver_position_t *>(
         cloud->positions.data());
     out_frame->colours =
         reinterpret_cast<const pointreceiver_color_t *>(cloud->colors.data());
+    out_frame->attributes = attributes_ptr;
+    out_frame->attribute_count = attribute_count;
     return POINTRECEIVER_OK;
   });
+}
+
+const pointreceiver_attribute *
+pointreceiver_find_attribute(const pointreceiver_point_cloud_frame *frame,
+                             const char *name) {
+  if (!frame || !frame->attributes || !name) return nullptr;
+
+  const std::string_view wanted{name};
+  for (size_t i = 0; i < frame->attribute_count; i++) {
+    if (std::string_view{frame->attributes[i].name} == wanted) {
+      return &frame->attributes[i];
+    }
+  }
+  return nullptr;
+}
+
+pointreceiver_status
+pointreceiver_attribute_copy_floats(const pointreceiver_attribute *attribute,
+                                    float *out, size_t out_capacity) {
+  if (!attribute || !attribute->data || !out) {
+    return POINTRECEIVER_ERROR_INVALID_ARGUMENT;
+  }
+
+  const auto component_count = static_cast<size_t>(attribute->component_count);
+  const auto value_count = attribute->element_count * component_count;
+  if (out_capacity < value_count) return POINTRECEIVER_ERROR_INVALID_ARGUMENT;
+
+  const auto *bytes = static_cast<const std::byte *>(attribute->data);
+  const auto step = attribute->quantisation_step;
+
+  const auto copy_as = [&]<typename Scalar>(std::type_identity<Scalar>) {
+    for (size_t i = 0; i < attribute->element_count; i++) {
+      const auto *element =
+          reinterpret_cast<const Scalar *>(bytes + i * attribute->stride);
+      for (size_t component = 0; component < component_count; component++) {
+        out[i * component_count + component] =
+            static_cast<float>(element[component]) * step;
+      }
+    }
+  };
+
+  switch (attribute->element_type) {
+  case POINTRECEIVER_ATTRIBUTE_FLOAT32:
+    copy_as(std::type_identity<float>{});
+    break;
+  case POINTRECEIVER_ATTRIBUTE_UINT8:
+    copy_as(std::type_identity<std::uint8_t>{});
+    break;
+  case POINTRECEIVER_ATTRIBUTE_UINT16:
+    copy_as(std::type_identity<std::uint16_t>{});
+    break;
+  case POINTRECEIVER_ATTRIBUTE_UINT32:
+    copy_as(std::type_identity<std::uint32_t>{});
+    break;
+  case POINTRECEIVER_ATTRIBUTE_INT16:
+    copy_as(std::type_identity<std::int16_t>{});
+    break;
+  case POINTRECEIVER_ATTRIBUTE_INT32:
+    copy_as(std::type_identity<std::int32_t>{});
+    break;
+  default:
+    return POINTRECEIVER_ERROR_INVALID_ARGUMENT;
+  }
+  return POINTRECEIVER_OK;
 }
 
 size_t

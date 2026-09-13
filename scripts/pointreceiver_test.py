@@ -13,10 +13,22 @@ import argparse
 import ctypes
 import os
 
+class Attribute(ctypes.Structure):
+    _fields_ = [("name", ctypes.c_char_p),
+                ("data", ctypes.c_void_p),
+                ("element_count", ctypes.c_size_t),
+                ("quantisation_step", ctypes.c_float),
+                ("component_count", ctypes.c_uint32),
+                ("stride", ctypes.c_uint32),
+                ("element_type", ctypes.c_int)]
+
+
 class PointCloudFrame(ctypes.Structure):
     _fields_ = [("point_count", ctypes.c_size_t),
                 ("positions", ctypes.c_void_p),
-                ("colours", ctypes.c_void_p)]
+                ("colours", ctypes.c_void_p),
+                ("attributes", ctypes.POINTER(Attribute)),
+                ("attribute_count", ctypes.c_size_t)]
 
 
 class MessageValue(ctypes.Union):
@@ -71,6 +83,8 @@ lib.pointreceiver_subscribe_to_point_cloud.argtypes = [context_arg, ctypes.c_cha
 lib.pointreceiver_dequeue_point_cloud.argtypes = [
     context_arg, ctypes.c_char_p, ctypes.c_size_t,
     ctypes.POINTER(PointCloudFrame), ctypes.c_int]
+lib.pointreceiver_attribute_copy_floats.argtypes = [
+    ctypes.POINTER(Attribute), ctypes.POINTER(ctypes.c_float), ctypes.c_size_t]
 lib.pointreceiver_start_message_receiver.argtypes = [context_arg, ctypes.c_char_p]
 lib.pointreceiver_stop_message_receiver.argtypes = [context_arg]
 lib.pointreceiver_subscribe_to_message.argtypes = [context_arg, ctypes.c_char_p]
@@ -115,6 +129,30 @@ print(f"listening for {kind} on {endpoint} [{topic or 'all topics'}], ctrl-c to 
 value_types = ["float", "int", "string", "bool", "bounds",
                "points", "voxels", "aabbs", "contours", "unknown"]
 
+# indexed by pointreceiver_attribute_type
+attribute_type_names = ["float32", "uint8", "uint16", "uint32", "int16", "int32"]
+
+
+def describe_attribute(attribute, preview_count=3):
+    name = attribute.name.decode(errors="replace")
+    if attribute.element_type >= len(attribute_type_names):
+        return f"{name}: unknown element type {attribute.element_type}"
+
+    # the library converts out of whatever it was stored as, so nothing here
+    # needs to know about the storage type or its quantisation step
+    value_count = attribute.element_count * attribute.component_count
+    values = (ctypes.c_float * value_count)()
+    if lib.pointreceiver_attribute_copy_floats(
+            ctypes.byref(attribute), values, value_count) != status_ok:
+        return f"{name}: values could not be read"
+
+    shown = min(preview_count, value_count)
+    preview = ", ".join(f"{values[i]:.4g}" for i in range(shown))
+    ellipsis = ", ..." if value_count > shown else ""
+    return (f"{name}: {attribute.element_count} x "
+            f"{attribute_type_names[attribute.element_type]} "
+            f"[{preview}{ellipsis}]")
+
 address = ctypes.create_string_buffer(256)
 try:
     while True:
@@ -132,6 +170,8 @@ try:
             print(f"{source}: {name}")
         else:
             print(f"{payload.point_count} points from '{source}'")
+            for i in range(payload.attribute_count):
+                print(f"    {describe_attribute(payload.attributes[i])}")
 except KeyboardInterrupt:
     print()
 

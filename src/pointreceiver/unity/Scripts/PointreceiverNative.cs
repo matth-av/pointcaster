@@ -67,4 +67,16 @@ public static class PointreceiverNative
      CallingConvention = CallingConvention.Cdecl)]
     public static extern PointreceiverStatus GetKnownPointCloudAddress(IntPtr context, UIntPtr index,
         [Out, MarshalAs(UnmanagedType.LPStr)] StringBuilder outAddress, UIntPtr outCapacity);
+
+    // Attribute lookup by name within a dequeued frame. Returns a borrowed
+    // pointer into the attribute's buffer
+    [DllImport(NativeLib, EntryPoint = "pointreceiver_find_attribute",
+     CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    public static extern IntPtr FindAttribute(ref PointCloudFrame frame, string name);
+
+    // Converts an attribute out as floats with any quantisation already decoded.
+    [DllImport(NativeLib, EntryPoint = "pointreceiver_attribute_copy_floats",
+     CallingConvention = CallingConvention.Cdecl)]
+    public static extern PointreceiverStatus AttributeCopyFloats(ref PointreceiverAttribute attribute,
+        float[] outValues, UIntPtr outCapacity);
 }
