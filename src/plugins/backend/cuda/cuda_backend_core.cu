@@ -11,11 +11,13 @@
 #include <thrust/device_vector.h>
 #include <thrust/execution_policy.h>
 #include <thrust/host_vector.h>
+#include <thrust/iterator/counting_iterator.h>
 #include <thrust/iterator/transform_iterator.h>
 #include <thrust/iterator/zip_iterator.h>
 #include <thrust/partition.h>
 #include <thrust/sequence.h>
 #include <unordered_map>
+#include <vector>
 
 namespace {
 
@@ -29,6 +31,7 @@ struct DeviceTransformMemory {
   thrust::device_vector<color> input_colors;
   thrust::device_vector<position> output_positions;
   thrust::device_vector<color> output_colors;
+  thrust::device_vector<uint32_t> output_indices;
   thrust::device_vector<std::byte> interleaved_render;
   thrust::device_vector<int> indices;
 
@@ -40,6 +43,7 @@ struct DeviceTransformMemory {
     input_colors.resize(n);
     output_positions.resize(n);
     output_colors.resize(n);
+    output_indices.resize(n);
     interleaved_render.resize(n * 16);
     indices.resize(n);
     thrust::sequence(indices.begin(), indices.end());
@@ -59,6 +63,7 @@ void create_device_memory(const void *owner, const size_t point_count) {
       .input_colors = thrust::device_vector<color>(point_count),
       .output_positions = thrust::device_vector<position>(point_count),
       .output_colors = thrust::device_vector<color>(point_count),
+      .output_indices = thrust::device_vector<uint32_t>(point_count),
       .interleaved_render = thrust::device_vector<std::byte>(point_count * 16),
       .indices = thrust::device_vector<int>(point_count)};
 
@@ -118,8 +123,8 @@ struct ProjectAndTransform {
 struct BoundsCheck {
   filter::TransformFilterParameters params;
 
-  __host__ __device__ bool
-  operator()(thrust::tuple<position, color> point) const {
+  template <typename PointT>
+  __host__ __device__ bool operator()(const PointT &point) const {
     auto pos = thrust::get<0>(point);
     return filter::is_valid(pos) && filter::in_bounds(pos, params);
   }
@@ -151,6 +156,12 @@ struct MergeBounds {
   }
 };
 
+__host__ __device__ inline position invalid_position() {
+  return position{filter::invalid_position_value.x,
+                  filter::invalid_position_value.y,
+                  filter::invalid_position_value.z};
+}
+
 struct TransformCloudPoint {
   filter::TransformFilterParameters params;
   bool sample_cloud;
@@ -163,17 +174,18 @@ struct TransformCloudPoint {
     sample_cloud = params.sample > 1;
   }
 
-  using OutputPointT = thrust::tuple<position, color>;
+  using OutputPointT = thrust::tuple<position, color, uint32_t>;
   using InputPointT = thrust::tuple<position, color, int>;
 
   __host__ __device__ OutputPointT operator()(InputPointT input) const {
     const int i = thrust::get<2>(input);
+    const auto index = static_cast<uint32_t>(i);
     if (sample_cloud && !filter::sample(i, params)) {
-      return thrust::make_tuple(filter::invalid_position_value, color{});
+      return thrust::make_tuple(invalid_position(), color{}, index);
     }
     auto pos = filter::transform(thrust::get<0>(input), params);
     auto col = filter::color_transform(thrust::get<1>(input), params);
-    return thrust::make_tuple(pos, col);
+    return thrust::make_tuple(pos, col, index);
   }
 };
 
@@ -208,7 +220,7 @@ struct InBoundsPointCheck {
   InBoundsCheck keeps_point;
 
   __host__ __device__ bool
-  operator()(thrust::tuple<position, color> point) const {
+  operator()(thrust::tuple<position, color, uint32_t> point) const {
     return keeps_point(thrust::get<0>(point));
   }
 };
@@ -413,10 +425,12 @@ BoundsFilterResult filter_to_bounds(const void *owner,
 
     auto input_points_begin = thrust::make_zip_iterator(
         thrust::make_tuple(device_memory->input_positions.begin(),
-                           device_memory->input_colors.begin()));
+                           device_memory->input_colors.begin(),
+                           thrust::make_counting_iterator(uint32_t{0})));
     auto output_points_begin = thrust::make_zip_iterator(
         thrust::make_tuple(device_memory->output_positions.begin(),
-                           device_memory->output_colors.begin()));
+                           device_memory->output_colors.begin(),
+                           device_memory->output_indices.begin()));
 
     auto new_end = thrust::copy_if(
         thrust::cuda::par, input_points_begin, input_points_begin + input_count,
@@ -437,6 +451,19 @@ BoundsFilterResult filter_to_bounds(const void *owner,
 
   {
     ProfilingZone output_zone("CudaBackend::copy_back_to_host");
+
+    // the index list only has to come back off the gpu when there are
+    // attributes for it to place
+    std::vector<uint32_t> kept_indices;
+    if (!input_cloud.attributes.empty()) {
+      kept_indices.resize(kept_count);
+      thrust::copy(device_memory->output_indices.begin(),
+                   device_memory->output_indices.begin() + kept_count,
+                   kept_indices.begin());
+    }
+
+    input_cloud.gather_attributes_into(output_cloud, kept_indices);
+
     output_cloud.resize(kept_count);
     thrust::copy(device_memory->output_positions.begin(),
                  device_memory->output_positions.begin() + kept_count,
@@ -490,7 +517,8 @@ void transform_point_cloud(const void *owner, const PointCloud &input_cloud,
 
   auto output_points_begin = thrust::make_zip_iterator(
       thrust::make_tuple(device_memory->output_positions.begin(),
-                         device_memory->output_colors.begin()));
+                         device_memory->output_colors.begin(),
+                         device_memory->output_indices.begin()));
 
   size_t new_point_count;
   position_bounds new_cloud_bounds;
@@ -533,6 +561,16 @@ void transform_point_cloud(const void *owner, const PointCloud &input_cloud,
                  output_cloud.colors.begin());
     output_cloud.bounds = new_cloud_bounds;
   }
+
+  std::vector<uint32_t> kept_indices;
+  if (!input_cloud.attributes.empty()) {
+    kept_indices.resize(new_point_count);
+    thrust::copy(device_memory->output_indices.begin(),
+                 device_memory->output_indices.begin() + new_point_count,
+                 kept_indices.begin());
+  }
+
+  input_cloud.gather_attributes_into(output_cloud, kept_indices);
 
   output_cloud.resize(new_point_count);
 }

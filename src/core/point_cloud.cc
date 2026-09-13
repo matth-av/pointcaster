@@ -73,36 +73,95 @@ auto PointCloud::deserialize(std::span<const std::byte> buffer) -> PointCloud {
   return point_cloud;
 }
 
-PointCloud operator+(PointCloud const &lhs, PointCloud const &rhs) {
-  std::vector<position> positions;
-  std::vector<color> colors;
+void PointCloud::gather_attributes_into(
+    PointCloud &destination, std::span<const uint32_t> indices) const {
+  if (attributes.empty()) {
+    destination.attributes.clear();
+    return;
+  }
 
-  const auto lhs_size = lhs.positions.size();
-  const auto rhs_size = rhs.positions.size();
+  StringMap<attribute_storage> gathered;
+  gathered.reserve(attributes.size());
 
-  positions.reserve(lhs_size + rhs_size);
-  positions.insert(positions.end(), lhs.positions.begin(), lhs.positions.end());
-  positions.insert(positions.end(), rhs.positions.begin(), rhs.positions.end());
+  for (const auto &[name, storage] : attributes) {
+    std::visit(
+        [&](const auto &values) {
+          using ElementT = typename std::decay_t<decltype(values)>::value_type;
+          std::vector<ElementT> kept(indices.size());
+          for (size_t i = 0; i < indices.size(); i++) {
+            const auto source_index = static_cast<size_t>(indices[i]);
+            if (source_index < values.size()) kept[i] = values[source_index];
+          }
+          gathered.emplace(name, std::move(kept));
+        },
+        storage);
+  }
 
-  colors.reserve(lhs_size + rhs_size);
-  colors.insert(colors.end(), lhs.colors.begin(), lhs.colors.end());
-  colors.insert(colors.end(), rhs.colors.begin(), rhs.colors.end());
-
-  return PointCloud{positions, colors};
+  destination.attributes = std::move(gathered);
 }
 
-PointCloud operator+=(PointCloud &lhs, PointCloud const &rhs) {
-  const auto lhs_size = lhs.positions.size();
-  const auto rhs_size = rhs.positions.size();
+PointCloud &operator+=(PointCloud &lhs, PointCloud const &rhs) {
+  const auto appended_size = rhs.size();
+  if (appended_size == 0) return lhs;
 
-  lhs.positions.reserve(lhs_size + rhs_size);
+  const auto original_size = lhs.size();
+
+  lhs.positions.reserve(original_size + appended_size);
   lhs.positions.insert(lhs.positions.end(), rhs.positions.begin(),
                        rhs.positions.end());
 
-  lhs.colors.reserve(lhs_size + rhs_size);
+  lhs.colors.reserve(original_size + appended_size);
   lhs.colors.insert(lhs.colors.end(), rhs.colors.begin(), rhs.colors.end());
 
+  for (const auto &appended_position : rhs.positions) {
+    lhs.bounds.encompass(appended_position);
+  }
+
+  // grow what the left cloud already holds, taking values from the right
+  // where it carries the same attribute at the same type
+  for (auto &[name, storage] : lhs.attributes) {
+    std::visit(
+        [&](auto &values) {
+          using element = typename std::decay_t<decltype(values)>::value_type;
+          values.resize(original_size);
+
+          const auto it = rhs.attributes.find(name);
+          const auto *appended =
+              it == rhs.attributes.end()
+                  ? nullptr
+                  : std::get_if<std::vector<element>>(&it->second);
+
+          if (appended && appended->size() == appended_size) {
+            values.insert(values.end(), appended->begin(), appended->end());
+          } else {
+            values.resize(original_size + appended_size);
+          }
+        },
+        storage);
+  }
+
+  // then take on the attributes only the right cloud has, defaulted across
+  // the points that were already here
+  for (const auto &[name, storage] : rhs.attributes) {
+    if (lhs.attributes.contains(name)) continue;
+    std::visit(
+        [&](const auto &values) {
+          using element = typename std::decay_t<decltype(values)>::value_type;
+          std::vector<element> merged(original_size);
+          merged.insert(merged.end(), values.begin(), values.end());
+          merged.resize(original_size + appended_size);
+          lhs.attributes.emplace(name, std::move(merged));
+        },
+        storage);
+  }
+
   return lhs;
+}
+
+PointCloud operator+(PointCloud const &lhs, PointCloud const &rhs) {
+  PointCloud combined = lhs;
+  combined += rhs;
+  return combined;
 }
 
 } // namespace pc

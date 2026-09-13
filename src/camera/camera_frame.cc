@@ -230,16 +230,21 @@ void filter_cloud_by_pixel_mask(const CameraFrameData &frame,
     }
   }
 
-  std::size_t write = 0;
+  std::vector<uint32_t> kept_indices;
+  kept_indices.reserve(cloud_size);
   for (std::size_t read = 0; read < cloud_size; ++read) {
-    if (!keep[read]) continue;
-    if (write != read) {
-      cloud.positions[write] = cloud.positions[read];
-      cloud.colors[write] = cloud.colors[read];
-    }
-    ++write;
+    if (keep[read]) kept_indices.push_back(static_cast<uint32_t>(read));
   }
-  cloud.resize(write);
+
+  for (std::size_t i = 0; i < kept_indices.size(); i++) {
+    const auto initial_index = kept_indices[i];
+    if (i == initial_index) continue;
+    cloud.positions[i] = cloud.positions[initial_index];
+    cloud.colors[i] = cloud.colors[initial_index];
+  }
+
+  cloud.gather_attributes_into(cloud, kept_indices);
+  cloud.resize(kept_indices.size());
 }
 
 } // namespace pc::camera

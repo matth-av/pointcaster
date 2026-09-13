@@ -361,11 +361,7 @@ void Session::update_loop(std::stop_token stop_token) {
       auto aggregated = std::make_shared<PointCloud>();
       for (auto &cloud : clouds) {
         if (!cloud || cloud->empty()) continue;
-        aggregated->positions.insert(aggregated->positions.end(),
-                                     cloud->positions.begin(),
-                                     cloud->positions.end());
-        aggregated->colors.insert(aggregated->colors.end(),
-                                  cloud->colors.begin(), cloud->colors.end());
+        *aggregated += *cloud;
       }
       if (!aggregated->empty()) {
         feed_operator_pipeline(std::move(aggregated));

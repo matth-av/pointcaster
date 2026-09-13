@@ -4,6 +4,7 @@
 #include <Corrade/PluginManager/AbstractManager.h>
 #include <Corrade/PluginManager/AbstractPlugin.h>
 #include <core/logger/logger.h>
+#include <cstdint>
 #include <exception>
 
 namespace pc::backend {

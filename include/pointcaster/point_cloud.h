@@ -23,9 +23,10 @@ public:
 
   position_bounds bounds;
 
-// Arbitrary per-point attributes, keyed by name.
+  // Arbitrary per-point attributes, keyed by name.
   using attribute_storage =
-      std::variant<std::vector<float>, std::vector<scale>>;
+      std::variant<std::vector<float>, std::vector<scale>,
+                   std::vector<position>>;
   StringMap<attribute_storage> attributes;
 
   auto size() const { return positions.size(); }
@@ -82,6 +83,13 @@ public:
     return add<T>(name, size());
   }
 
+  // Moves each attribute value into the slot its point ended up in.
+  // Needs to be called after any filtering of points and before resizing the
+  // destination. indices names the survivors in the order they should end up
+  POINTCASTER_CORE_EXPORT void
+  gather_attributes_into(PointCloud &destination,
+                         std::span<const uint32_t> indices) const;
+
 private:
   std::vector<std::byte> compress() const;
   static PointCloud decompress(const std::vector<std::byte> &buffer,
@@ -90,8 +98,11 @@ private:
 
 POINTCASTER_CORE_EXPORT PointCloud operator+(PointCloud const &lhs,
                                              PointCloud const &rhs);
-POINTCASTER_CORE_EXPORT PointCloud operator+=(PointCloud &lhs,
-                                              const PointCloud &rhs);
+
+// Appends rhs's points to lhs. An attribute held by only one of the two clouds
+// is filled with defaults across the other's points.
+POINTCASTER_CORE_EXPORT PointCloud &operator+=(PointCloud &lhs,
+                                               const PointCloud &rhs);
 
 using PointCloudPtr = std::shared_ptr<PointCloud>;
 
@@ -111,22 +122,21 @@ struct VoxelisedCloud : PointCloud {
 using VoxelisedCloudPtr = std::shared_ptr<VoxelisedCloud>;
 
 struct AabbList : PointCloud {
-  // for an aabb list, we just need two 'position' clouds instead of one.
-  std::vector<position> _max_positions;
+  // an aabb list needs two 'position' clouds...
+  // one for min, one for max of the bounding box
 
-  // add accessors to make this clearer at the call site
-  std::vector<position> &min_positions() { return positions; }
-  std::vector<position> &max_positions() { return _max_positions; }
-  const std::vector<position> &min_positions() const { return positions; }
-  const std::vector<position> &max_positions() const { return _max_positions; }
+  static constexpr std::string_view max_position_attribute = "max_position";
 
-  void resize(std::size_t new_size) {
-    PointCloud::resize(new_size);
-    _max_positions.resize(new_size);
+  AabbList() { add<position>(max_position_attribute, 0); }
+
+  // accessors to make this clearer at the call site
+  std::span<position> min_positions() { return positions; }
+  std::span<position> max_positions() {
+    return get<position>(max_position_attribute);
   }
-  void reserve(std::size_t new_capacity) {
-    PointCloud::reserve(new_capacity);
-    _max_positions.reserve(new_capacity);
+  std::span<const position> min_positions() const { return positions; }
+  std::span<const position> max_positions() const {
+    return get<position>(max_position_attribute);
   }
 };
 
@@ -141,20 +151,24 @@ inline constexpr bool is_cloud_stream_v =
 // with zpp_bits for serializing before publishing over zmq
 template <typename Archive>
 constexpr auto serialize(Archive &archive, VoxelisedCloud &cloud) {
-  return archive(cloud.positions, cloud.colors, cloud.bounds, cloud.voxel_size);
+  return archive(cloud.positions, cloud.colors, cloud.bounds, cloud.attributes,
+                 cloud.voxel_size);
 }
 template <typename Archive>
 constexpr auto serialize(Archive &archive, const VoxelisedCloud &cloud) {
-  return archive(cloud.positions, cloud.colors, cloud.bounds, cloud.voxel_size);
+  return archive(cloud.positions, cloud.colors, cloud.bounds, cloud.attributes,
+                 cloud.voxel_size);
 }
 
+// AabbList has a user-provided constructor, so it is not an aggregate and
+// zpp_bits cannot reflect over it the way it does PointCloud
 template <typename Archive>
 constexpr auto serialize(Archive &archive, AabbList &list) {
-  return archive(list.positions, list.colors, list.bounds, list._max_positions);
+  return archive(list.positions, list.colors, list.bounds, list.attributes);
 }
 template <typename Archive>
 constexpr auto serialize(Archive &archive, const AabbList &list) {
-  return archive(list.positions, list.colors, list.bounds, list._max_positions);
+  return archive(list.positions, list.colors, list.bounds, list.attributes);
 }
 
 struct PointCloudPacket {

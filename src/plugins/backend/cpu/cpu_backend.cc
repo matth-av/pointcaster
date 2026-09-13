@@ -36,6 +36,7 @@ concept PointSource =
 
 template <PointSource F>
 void transform_from(F &&get_point, size_t point_count, PointCloud &output_cloud,
+                    const PointCloud &attribute_source,
                     const TransformConfiguration &transform,
                     const ColorTransformConfiguration &color_transform,
                     const pc::float4x4 world_transform) {
@@ -66,8 +67,8 @@ void transform_from(F &&get_point, size_t point_count, PointCloud &output_cloud,
   std::for_each(std::execution::par_unseq, index_sequence.begin(),
                 index_sequence.end(), transform_point);
 
-  std::vector<int> output_indices(point_count);
-  std::iota(output_indices.begin(), output_indices.end(), 0);
+  std::vector<uint32_t> output_indices(point_count);
+  std::iota(output_indices.begin(), output_indices.end(), uint32_t{0});
 
   const auto crop_point_to_bounds = [&](const auto i) {
     return filter::is_valid(output_cloud.positions[i]) &&
@@ -121,6 +122,9 @@ void transform_from(F &&get_point, size_t point_count, PointCloud &output_cloud,
   std::copy(output_colors.begin(), output_colors.end(),
             output_cloud.colors.begin());
 
+  attribute_source.gather_attributes_into(
+      output_cloud, {output_indices.data(), new_point_count});
+
   output_cloud.resize(new_point_count);
 }
 
@@ -146,8 +150,8 @@ void CpuBackend::transform_point_cloud(
       [&](int i) -> std::pair<position, color> {
         return {input_cloud.positions[i], input_cloud.colors[i]};
       },
-      output_cloud.size(), output_cloud, transform, color_transform,
-      world_transform);
+      output_cloud.size(), output_cloud, input_cloud, transform,
+      color_transform, world_transform);
 }
 
 BoundsFilterResult CpuBackend::filter_to_bounds(
@@ -223,6 +227,8 @@ BoundsFilterResult CpuBackend::filter_to_bounds(
         writing_in_place ? source_positions : input_positions;
     const auto &read_colors = writing_in_place ? source_colors : input_colors;
 
+    input_cloud.gather_attributes_into(output_cloud, kept_indices);
+
     output_cloud.resize(result.point_count);
 
     result.bounds = tbb::parallel_reduce(
@@ -267,8 +273,8 @@ void CpuBackend::project_transform_frame_data(
     return {pos, color{rgb.r, rgb.g, rgb.b}};
   };
 
-  transform_from(convert_point_data, point_count, output_cloud, transform,
-                 color_transform, world_transform);
+  transform_from(convert_point_data, point_count, output_cloud, output_cloud,
+                 transform, color_transform, world_transform);
 }
 
 void CpuBackend::pack_render_buffer(const PointCloud &cloud,
