@@ -70,12 +70,10 @@ public:
     return const_cast<PointCloud *>(this)->get<T>(name);
   }
 
-  // Creates or replaces an attribute with one entry per point and hands back
-  // the span to fill in.
+  // Creates or replaces an attribute buffer
   template <typename T>
   std::span<T> add(std::string_view name, std::size_t count) {
-    // emplace hands back a reference to the alternative it just built
-    auto &values = attributes[std::string{name}].emplace<std::vector<T>>(count);
+    auto &values = attributes[name].emplace<std::vector<T>>(count);
     return std::span<T>{values};
   }
 
@@ -83,9 +81,8 @@ public:
     return add<T>(name, size());
   }
 
-  // Moves each attribute value into the slot its point ended up in.
-  // Needs to be called after any filtering of points and before resizing the
-  // destination. indices names the survivors in the order they should end up
+  // Moves each attribute value into the correct slot after filtering or
+  // re-ordering point positions or colors.
   POINTCASTER_CORE_EXPORT void
   gather_attributes_into(PointCloud &destination,
                          std::span<const uint32_t> indices) const;

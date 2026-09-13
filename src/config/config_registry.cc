@@ -60,7 +60,7 @@ void ConfigRegistry::snapshot(const StringCollection &paths,
   out.reserve(std::size(paths));
   std::shared_lock lock(_mutex);
   for (const auto &path : paths) {
-    const auto it = _fields.find(std::string_view(path));
+    const auto it = _fields.find(path);
     if (it == _fields.end()) continue;
     out.emplace(it->first, it->second.get());
   }

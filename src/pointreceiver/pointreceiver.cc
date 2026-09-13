@@ -291,12 +291,7 @@ void point_cloud_receive_loop(pc::receiver::Context &ctx,
       const auto separator = frame.find('\0');
       if (separator == std::string_view::npos) continue;
       const auto address = frame.substr(0, separator);
-      const auto it = latest_payloads.find(address);
-      if (it == latest_payloads.end()) {
-        latest_payloads.emplace(std::string(address), std::move(message));
-      } else {
-        it->second = std::move(message);
-      }
+      latest_payloads[address] = std::move(message);
     }
 
     const auto message_bytes = [](const zmq::message_t &message) {

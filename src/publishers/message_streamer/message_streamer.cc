@@ -141,16 +141,13 @@ MessageStreamer::config(Workspace &workspace) const {
 void MessageStreamer::handle_update(const std::string_view path,
                                     const ConfigValue &value,
                                     const MessageStreamerConfiguration &) {
-  // TODO damn this string conversion sucks shit
-  // atm its needed for StringMap index operator
-  const auto path_str = std::string(path);
-  last_value_for_path[path_str] = value;
+  last_value_for_path[path] = value;
 
   if (!_socket) return;
 
   // if there are no subscribers, don't bother serializing and publishing
   if (subscribers.count_for_path[""] == 0 &&
-      subscribers.count_for_path[path_str] == 0) {
+      subscribers.count_for_path[path] == 0) {
     return;
   }
 
