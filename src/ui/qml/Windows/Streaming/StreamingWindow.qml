@@ -37,15 +37,6 @@ KDDW.DockWidget {
             }
             spacing: Math.round(10 * Scaling.uiScale)
 
-            // point streamer configuration
-            ConfigurationEditor {
-                id: streamerConfigEditor
-                Layout.fillWidth: true
-                visible: !!(root.workspace && root.workspace.pointStreamerAdapter)
-                configAdapter: root.workspace ? root.workspace.pointStreamerAdapter : null
-                workspace: root.workspace
-            }
-
             // broadcast channels, each toggleable on/off
             Item {
                 id: streamChannelListContainer
@@ -124,16 +115,28 @@ KDDW.DockWidget {
                 }
             }
 
-            // settings and connected clients for the selected channel
+            // the point streamer's own configuration, then settings and
+            // connected clients for the selected channel
             PaddedScrollView {
-                id: streamChannelDetailsScrollView
+                id: streamerDetailsScrollView
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumHeight: Math.round(50 * Scaling.uiScale)
                 clip: true
 
                 Column {
-                    width: streamChannelDetailsScrollView.availableWidth
+                    width: streamerDetailsScrollView.availableWidth
+                    anchors.topMargin: Math.round(8 * Scaling.uiScale)
+                    spacing: streamerConfigEditor.groupSpacing
+
+                    ConfigurationEditor {
+                        id: streamerConfigEditor
+                        width: parent.width
+                        visible: !!(root.workspace && root.workspace.pointStreamerAdapter)
+                        configAdapter: root.workspace ? root.workspace.pointStreamerAdapter : null
+                        workspace: root.workspace
+                        flattenFields: false
+                    }
 
                     Text {
                         width: parent.width
