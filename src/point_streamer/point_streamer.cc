@@ -60,7 +60,7 @@ void streaming_thread_loop(
   std::string address;
   int port;
   int publish_hz = 30;
-  bool compress = false;
+  CodecConfiguration codec_config;
   bool publish_every_frame = false;
   std::vector<PointStream> point_streams;
   std::vector<StreamChannelConfiguration> channel_configs;
@@ -75,7 +75,7 @@ void streaming_thread_loop(
     address = stream_config.address.value();
     port = stream_config.port.value();
     publish_hz = stream_config.publish_hz.value();
-    compress = stream_config.compress.value();
+    codec_config = stream_config.codec_config.value();
     publish_every_frame = stream_config.publish_every_frame.value();
     // TODO is this too heavy to do every frame? maybe we need a dirty marker
     channel_configs = stream_config.channels;
@@ -232,11 +232,7 @@ void streaming_thread_loop(
               for (size_t i = range.begin(); i < range.end(); i++) {
                 const auto &stream = streams_to_serialize[i];
 
-                // TODO this is where serialization options could 
-                // be passed in, like draco codec options maybe
-                // as some serialization options variant or something
-                const auto payload =
-                    stream.cloud->serialize(compress && !stream.cloud->empty());
+                const auto payload = stream.cloud->compress(codec_config);
 
                 const auto prefix_size = stream.address.size() + 1;
 

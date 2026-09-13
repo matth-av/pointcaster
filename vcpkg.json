@@ -78,10 +78,12 @@
 		"pointreceiver": {
 			"description": "Build the pointreceiver client library",
 			"$dependencies-note": [
-				"the receiver lib only uses common dependencies for now,",
-				"but lib-only deps can be added below..."
+				"the receiver lib links pointcaster_core, whose point cloud header",
+				"carries the codec configuration structures"
 			],
-			"dependencies": []
+			"dependencies": [
+				"reflectcpp"
+			]
 		}
 	}
 }

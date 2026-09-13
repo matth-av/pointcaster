@@ -68,6 +68,7 @@ set(CONFIG_ADAPTER_INPUTS
     session/session_config.h
     camera/camera_config.h
     camera/look_at_camera_config.h
+    core/codec/codec_config.h
     point_streamer/point_streamer_config.h
     pipeline/concurrent_operator_pipeline_config.h
     plugins/devices/device_group_config.h

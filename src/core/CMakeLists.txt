@@ -17,6 +17,7 @@ add_library(pointcaster_core ${pointcaster_core_linkage}
     task_pool.cc
     plugin_manager_lock.cc
     codec/draco.cc
+    codec/meshopt.cc
     uuid/uuid.cc
     uuid/wtf/wtf.cc
     logger/logger.cc
@@ -41,9 +42,13 @@ endif()
 find_package(draco CONFIG REQUIRED)
 target_link_libraries(pointcaster_core PRIVATE draco::draco)
 
-# core_types.h needs meshoptimizer.h
+# codec/meshopt.cc uses the meshoptimizer vertex codec
 find_package(meshoptimizer CONFIG REQUIRED)
-target_link_libraries(pointcaster_core PUBLIC meshoptimizer::meshoptimizer)
+target_link_libraries(pointcaster_core PRIVATE meshoptimizer::meshoptimizer)
+
+# point_cloud.h carries the codec configuration structures
+find_package(reflectcpp CONFIG REQUIRED)
+target_link_libraries(pointcaster_core PUBLIC reflectcpp::reflectcpp)
 
 find_path(BSHOSHANY_THREAD_POOL_INCLUDE_DIRS "BS_thread_pool.hpp")
 target_include_directories(pointcaster_core PUBLIC ${BSHOSHANY_THREAD_POOL_INCLUDE_DIRS})

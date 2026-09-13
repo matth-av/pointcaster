@@ -23,6 +23,7 @@
 
 #include <camera/camera_config.h>
 #include <camera/look_at_camera_config.h>
+#include <codec/codec_config.h>
 #include <config/transform_config.h>
 #include <pipeline/concurrent_operator_pipeline_config.h>
 #include <publishers/mqtt/mqtt_client_config.h>
@@ -33,7 +34,8 @@
 namespace pc {
 
 using ConfigurationVariant = std::variant<
-    TransformConfiguration, ColorTransformConfiguration, FileConfiguration,
+    CodecConfiguration, TransformConfiguration, ColorTransformConfiguration,
+    FileConfiguration,
     FileFolderConfiguration, NetworkConfiguration, CameraConfiguration,
     LookAtCameraConfiguration, SessionConfiguration,
     SessionTimelineConfiguration, SequenceConfiguration,

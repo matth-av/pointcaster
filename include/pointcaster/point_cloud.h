@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core_types.h"
+#include <codec/codec_config.h>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -24,9 +25,8 @@ public:
   position_bounds bounds;
 
   // Arbitrary per-point attributes, keyed by name.
-  using attribute_storage =
-      std::variant<std::vector<float>, std::vector<scale>,
-                   std::vector<position>>;
+  using attribute_storage = std::variant<std::vector<float>, std::vector<scale>,
+                                         std::vector<position>>;
   StringMap<attribute_storage> attributes;
 
   auto size() const { return positions.size(); }
@@ -51,10 +51,10 @@ public:
   }
 
   POINTCASTER_CORE_EXPORT std::vector<std::byte>
-  serialize(bool compress = false) const;
+  compress(const CodecConfiguration &codec_config = {}) const;
 
   POINTCASTER_CORE_EXPORT static PointCloud
-  deserialize(std::span<const std::byte> buffer);
+  decompress(std::span<const std::byte> buffer);
 
   // Return an attribute by name
   template <typename T>
@@ -89,11 +89,6 @@ public:
   POINTCASTER_CORE_EXPORT void
   gather_attributes_into(PointCloud &destination,
                          std::span<const uint32_t> indices) const;
-
-private:
-  std::vector<std::byte> compress() const;
-  static PointCloud decompress(const std::vector<std::byte> &buffer,
-                               unsigned long point_count);
 };
 
 POINTCASTER_CORE_EXPORT PointCloud operator+(PointCloud const &lhs,
@@ -129,7 +124,6 @@ struct AabbList : PointCloud {
 
   AabbList() { add<position>(max_position_attribute, 0); }
 
-  // accessors to make this clearer at the call site
   std::span<position> min_positions() { return positions; }
   std::span<position> max_positions() {
     return get<position>(max_position_attribute);
@@ -170,19 +164,5 @@ template <typename Archive>
 constexpr auto serialize(Archive &archive, const AabbList &list) {
   return archive(list.positions, list.colors, list.bounds, list.attributes);
 }
-
-struct PointCloudPacket {
-  // out packet needs these explicitly sized types to ensure portability
-  // between unix and windows systems
-  uint64_t timestamp;
-  uint64_t point_count;
-  uint8_t compressed;
-  std::vector<std::byte> data;
-
-  static constexpr std::size_t header_bytes =
-      sizeof(uint64_t)   // timestamp
-      + sizeof(uint64_t) // point_count
-      + sizeof(uint8_t); // compressed flag
-};
 
 } // namespace pc

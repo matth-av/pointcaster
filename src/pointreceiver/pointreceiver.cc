@@ -311,7 +311,7 @@ void point_cloud_receive_loop(pc::receiver::Context &ctx,
       std::shared_ptr<const PointCloud> cloud;
       try {
         cloud = std::make_shared<const PointCloud>(
-            PointCloud::deserialize(cloud_bytes));
+            PointCloud::decompress(cloud_bytes));
       } catch (const std::exception &e) {
         pc::logger()->warn("point_cloud deserialize threw: {} (size={})",
                            e.what(), cloud_bytes.size());

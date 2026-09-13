@@ -1,7 +1,9 @@
+#include "codec/codecs.h"
+
 #include <chrono>
-#include <iostream>
 #include <pointcaster/point_cloud.h>
 #include <profiling/profiling_zone.h>
+#include <stdexcept>
 #include <zpp_bits.h>
 
 namespace pc {
@@ -9,68 +11,99 @@ namespace pc {
 using namespace std::chrono;
 using namespace pc::profiling;
 
-auto PointCloud::serialize(bool compress) const -> std::vector<std::byte> {
-  ProfilingZone zone("PointCloud::serialize");
+using PointCloudCodec = CodecConfiguration::PointCloudCodec;
+
+namespace {
+
+// timestamp, point count and codec id are written ahead of the body
+constexpr size_t packet_header_bytes =
+    sizeof(uint64_t) + sizeof(uint64_t) + sizeof(uint8_t);
+
+// what the reflected body will take, so the uncompressed path reserves once
+size_t attribute_bytes(const PointCloud &cloud) {
+  size_t total = 0;
+  for (const auto &[_, storage] : cloud.attributes) {
+    total += std::visit(
+        [](const auto &values) {
+          using ElementT = typename std::decay_t<decltype(values)>::value_type;
+          return values.size() * sizeof(ElementT);
+        },
+        storage);
+  }
+  return total;
+}
+
+} // namespace
+
+auto PointCloud::compress(const CodecConfiguration &codec_config) const
+    -> std::vector<std::byte> {
+  ProfilingZone zone("PointCloud::compress");
+  const auto &compression = codec_config.compression.value().variant();
 
   const auto timestamp = static_cast<uint64_t>(
       duration_cast<milliseconds>(system_clock::now().time_since_epoch())
           .count());
   const uint64_t point_count = size();
-  const auto compression_flag = static_cast<uint8_t>(compress);
+
+  const auto selected =
+      empty() ? PointCloudCodec::None : codec_config.codec.value();
+  const auto codec_id = static_cast<uint8_t>(selected);
   std::vector<std::byte> buffer;
 
-  if (compress) {
-    std::vector<std::byte> payload;
-    {
-      ProfilingZone z("serialize::compress");
-      payload = this->compress();
-    }
-    {
-      ProfilingZone z("serialize::reserve");
-      buffer.reserve(PointCloudPacket::header_bytes + payload.size());
-    }
-    {
-      ProfilingZone z("serialize::write_payload");
-      zpp::bits::out serializer{buffer};
-      serializer(timestamp, point_count, compression_flag, payload).or_throw();
-    }
-  } else {
-    {
-      ProfilingZone z("serialize::reserve");
-      buffer.reserve(PointCloudPacket::header_bytes +
-                     positions.size() * sizeof(positions[0]) +
-                     colors.size() * sizeof(colors[0]));
-    }
+  if (selected == PointCloudCodec::None) {
+    buffer.reserve(packet_header_bytes + positions.size() * sizeof(position) +
+                   colors.size() * sizeof(color) + attribute_bytes(*this));
     zpp::bits::out serializer{buffer};
-    {
-      ProfilingZone z("serialize::write_header");
-      serializer(timestamp, point_count, compression_flag).or_throw();
-    }
-    {
-      ProfilingZone z("serialize::write_body");
-      serializer(*this).or_throw();
+    serializer(timestamp, point_count, codec_id).or_throw();
+    serializer(*this).or_throw();
+    return buffer;
+  }
+
+  std::vector<std::byte> payload;
+  {
+    ProfilingZone codec_zone("PointCloud::compress::codec");
+    if (selected == PointCloudCodec::Meshopt) {
+      const auto *options = rfl::get_if<codec::MeshoptOptions>(&compression);
+      payload = codec::encode_meshopt(*this, options ? *options
+                                                     : codec::MeshoptOptions{});
+    } else {
+      const auto *options = rfl::get_if<codec::DracoOptions>(&compression);
+      payload = codec::encode_draco(*this,
+                                    options ? *options : codec::DracoOptions{});
     }
   }
+
+  buffer.reserve(packet_header_bytes + payload.size());
+  zpp::bits::out serializer{buffer};
+  serializer(timestamp, point_count, codec_id, payload).or_throw();
   return buffer;
 }
 
-auto PointCloud::deserialize(std::span<const std::byte> buffer) -> PointCloud {
-  zpp::bits::in zpp_deserialize{buffer};
+auto PointCloud::decompress(std::span<const std::byte> buffer) -> PointCloud {
+  zpp::bits::in deserializer{buffer};
 
   uint64_t timestamp = 0;
   uint64_t point_count = 0;
-  uint8_t compression_flag = 0;
-  zpp_deserialize(timestamp, point_count, compression_flag).or_throw();
+  uint8_t codec_id = 0;
+  deserializer(timestamp, point_count, codec_id).or_throw();
 
-  if (compression_flag != 0) {
-    std::vector<std::byte> payload;
-    zpp_deserialize(payload).or_throw();
-    return PointCloud::decompress(payload, point_count);
+  if (codec_id == static_cast<uint8_t>(PointCloudCodec::None)) {
+    PointCloud point_cloud;
+    deserializer(point_cloud).or_throw();
+    return point_cloud;
   }
 
-  PointCloud point_cloud;
-  zpp_deserialize(point_cloud).or_throw();
-  return point_cloud;
+  std::vector<std::byte> payload;
+  deserializer(payload).or_throw();
+
+  switch (static_cast<PointCloudCodec>(codec_id)) {
+  case PointCloudCodec::Meshopt:
+    return codec::decode_meshopt(payload, point_count);
+  case PointCloudCodec::Draco:
+    return codec::decode_draco(payload, point_count);
+  default:
+    throw std::runtime_error("point cloud packet uses an unknown codec");
+  }
 }
 
 void PointCloud::gather_attributes_into(
