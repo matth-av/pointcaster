@@ -1,10 +1,10 @@
 #pragma once
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <meshoptimizer.h>
 #include <type_traits>
 #include <utility>
 
@@ -148,40 +148,41 @@ struct radius {
   }
 };
 
-namespace detail {
-// the narrowest unsigned integer that holds Bits bits
-template <int Bits>
-using scale_storage_t =
-    std::conditional_t<(Bits <= 8), uint8_t,
-                       std::conditional_t<(Bits <= 16), uint16_t, uint32_t>>;
-} // namespace detail
+// a float value quantised into an integer..
+// the storage type sets the range and whether it is signed,
+// the step sets the resolution
+template <std::integral Storage, float step> struct basic_scale {
+  static_assert(step > 0.0f,
+                "step is the gap between two representable values");
 
-// an unsigned low precision float stored in a chosen number of bits
-template <int bits, float step> struct basic_scale {
-  static_assert(bits > 0 && bits <= 24,
-                "meshopt_quantizeUnorm evaluates (1 << bits) as an int");
-  static_assert(step > 0.0f, "step is the gap between two representable scales");
-
-  using storage_type = detail::scale_storage_t<bits>;
-
-  // anything above this clamps
-  static constexpr float max_value =
-      step * static_cast<float>((1ull << bits) - 1ull);
+  using storage_type = Storage;
+  static constexpr float step_value = step;
 
   storage_type raw = 0;
   auto operator<=>(const basic_scale &s) const = default;
 
   constexpr float value() const { return static_cast<float>(raw) * step; }
 
-  static basic_scale from_value(float value) {
-    // quantizeUnorm clamps its input to [0, 1]
-    return basic_scale{static_cast<storage_type>(
-        meshopt_quantizeUnorm(value / max_value, bits))};
+  // rounds to the nearest step and clamps to what the storage can hold
+  static constexpr basic_scale from_value(float value) {
+    constexpr auto lowest =
+        static_cast<float>(std::numeric_limits<storage_type>::lowest());
+    constexpr auto highest =
+        static_cast<float>(std::numeric_limits<storage_type>::max());
+    const float steps = value / step;
+    const float rounded = steps < 0 ? steps - 0.5f : steps + 0.5f;
+    if (rounded <= lowest) {
+      return basic_scale{std::numeric_limits<storage_type>::lowest()};
+    }
+    if (rounded >= highest) {
+      return basic_scale{std::numeric_limits<storage_type>::max()};
+    }
+    return basic_scale{static_cast<storage_type>(rounded)};
   }
 };
 
 // a millimetre of resolution across 0 .. 65.535 m. two bytes
-using scale = basic_scale<16, 0.001f>;
+using scale = basic_scale<uint16_t, 0.001f>;
 
 // a value the configuration can switch off without losing what it holds
 template <class T> struct Toggleable {
