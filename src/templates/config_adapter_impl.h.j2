@@ -14,6 +14,13 @@
 
    Blocks that reference the per-struct loop variable `s` are declared `scoped`.
    ============================================================================ #}
+{# ---- helper that packs a Toggleable of this kind into a QVariantMap ---- #}
+{% macro toggleable_to_map(kind) %}
+{%- if kind == "toggleable_bounds" %}toggleableBoundsToMap
+{%- elif kind == "toggleable_int" %}toggleableIntToMap
+{%- else %}toggleableRadiusToMap
+{%- endif %}
+{%- endmacro %}
 {# ---- reading a member into a QVariant ---- #}
 {% macro value_case(m) %}
         if (path == QStringLiteral("{{ m.path }}")) {
@@ -45,6 +52,8 @@
             return toggleableBoundsToMap({{ m.read }});
 {% elif m.kind == "toggleable_radius" %}
             return toggleableRadiusToMap({{ m.read }});
+{% elif m.kind == "toggleable_int" %}
+            return toggleableIntToMap({{ m.read }});
 {% elif m.kind == "stream" %}
             const auto stream = {{ m.read }};
             return QVariant(stream ? int(stream->size()) : -1);
@@ -95,6 +104,8 @@
             const auto newValue = toggleableBoundsLoose(value, {{ m.read }});
 {% elif m.kind == "toggleable_radius" %}
             const auto newValue = toggleableRadiusLoose(value, {{ m.read }});
+{% elif m.kind == "toggleable_int" %}
+            const auto newValue = toggleableIntLoose(value, {{ m.read }});
 {% elif m.kind == "position_bounds" %}
             const pc::position_bounds newValue = toPositionBoundsLoose(value);
 {% else %}
@@ -136,7 +147,7 @@ QVariant::fromValue(QQuaternion({{ (m.default_components or [1.0, 0.0, 0.0, 0.0]
 {%- elif m.kind == "length" or m.kind == "radius" %}
 QVariant({{ (m.default_value or 0) / 1000 }})
 {%- elif m.is_toggleable %}
-{% if m.default_expr %}QVariant({{ "toggleableBoundsToMap" if m.kind == "toggleable_bounds" else "toggleableRadiusToMap" }}({{ m.default_expr }})){% else %}QVariant(){% endif %}
+{% if m.default_expr %}QVariant({{ toggleable_to_map(m.kind) }}({{ m.default_expr }})){% else %}QVariant(){% endif %}
 {%- elif m.kind == "position_bounds" %}
 {% if m.default_expr %}QVariant(boundsToMetresMap({{ m.default_expr }})){% else %}QVariant(){% endif %}
 {%- elif m.kind == "stream" %}
@@ -228,7 +239,7 @@ public:
 
         // A nested variant switch changes which of our paths are visible.
         QObject::connect(&m_{{ m.name }}Adapter, &ConfigAdapter::structureChanged, this,
-            [this]() { emit structureChanged(); });
+            [this]() { notifyStructureChanged(); });
 {% endfor %}
     }
 
@@ -262,7 +273,7 @@ public:
             {{ m.ref }} = config.{{ m.name }};
             anyChanged = true;
             emit {{ m.name }}Changed();
-            emit structureChanged();
+            notifyStructureChanged();
             notifyFieldChanged(QStringLiteral("{{ m.path }}"));
         }
 {% elif m.comparable %}
@@ -432,7 +443,7 @@ public:
     Q_INVOKABLE double {{ m.name }}() const { return {{ m.read }}.metres(); }
     Q_INVOKABLE void set_{{ m.name }}(double value) { emit editRequested(QStringLiteral("{{ m.path }}"), QVariant(value)); }
 {% elif m.is_toggleable %}
-    Q_INVOKABLE QVariantMap {{ m.name }}() const { return {{ "toggleableBoundsToMap" if m.kind == "toggleable_bounds" else "toggleableRadiusToMap" }}({{ m.read }}); }
+    Q_INVOKABLE QVariantMap {{ m.name }}() const { return {{ toggleable_to_map(m.kind) }}({{ m.read }}); }
     Q_INVOKABLE void set_{{ m.name }}(const QVariantMap &value) { emit editRequested(QStringLiteral("{{ m.path }}"), QVariant::fromValue(value)); }
     Q_INVOKABLE void set_{{ m.name }}_active(bool active) {
         QVariantMap payload;
@@ -465,7 +476,8 @@ signals:
 {% set want_vector3d = want_position or "float3" in kinds %}
 {% set want_quaternion = "quaternion" in kinds %}
 {% set want_toggleable_radius = "toggleable_radius" in kinds %}
-{% if want_vector3d or want_quaternion or want_toggleable_radius %}
+{% set want_toggleable_int = "toggleable_int" in kinds %}
+{% if want_vector3d or want_quaternion or want_toggleable_radius or want_toggleable_int %}
 private:
 {% endif %}
 {% if want_vector3d %}
@@ -584,6 +596,32 @@ private:
         return next;
     }
 {% endif %}
+{% if want_toggleable_int %}
+    static QVariantMap toggleableIntToMap(const pc::Toggleable<int> &t) {
+        QVariantMap map;
+        map.insert(QStringLiteral("active"), t.active);
+        map.insert(QStringLiteral("value"), t.value);
+        return map;
+    }
+
+    static pc::Toggleable<int>
+    toggleableIntLoose(const QVariant &value, const pc::Toggleable<int> &current) {
+        auto next = current;
+        // as above: read the shape off what toMap() produced, not off the
+        // metatype that went in
+        const auto map = value.toMap();
+        if (map.isEmpty()) {
+            // a bare number is the value on its own, switch untouched
+            next.value = value.toInt();
+            return next;
+        }
+        if (map.contains(QStringLiteral("active")))
+            next.active = map.value(QStringLiteral("active")).toBool();
+        if (map.contains(QStringLiteral("value")))
+            next.value = map.value(QStringLiteral("value")).toInt();
+        return next;
+    }
+{% endif %}
 
 public:
     // ---- Path-based reads ----
@@ -621,7 +659,7 @@ public:
             default: return false;
             }
             emit {{ m.name }}Changed();
-            emit structureChanged();
+            notifyStructureChanged();
             notifyFieldChanged(QStringLiteral("{{ m.path }}"));
             return true;
         }
@@ -815,7 +853,11 @@ public:
     }
 {% endif %}
 
-{% if s.any_variants %}
+{#- a struct holding no variant of its own still has to answer for one sitting
+    inside a nested configuration, or the editor cannot tell that path is a
+    type selector and shows it as an ordinary field -#}
+{% set nested_members = s.members | selectattr("kind", "equalto", "nested") | list %}
+{% if s.any_variants or nested_members %}
     Q_INVOKABLE bool isVariant(const QString &path) const override {
 {% for m in s.members %}
 {% if m.kind in ("variant") %}

@@ -94,7 +94,8 @@ class Member:
     @property
     def is_toggleable(self) -> bool:
         """True for the kinds carrying a switch alongside their value."""
-        return self.kind in ("toggleable_bounds", "toggleable_radius")
+        return self.kind in ("toggleable_bounds", "toggleable_radius",
+                             "toggleable_int")
 
 
 @dataclass
@@ -129,7 +130,8 @@ class GeneratorArgs:
 KINDS = (
     "nested", "variant", "enum", "string", "bool", "int", "float", "float3",
     "quaternion", "position", "position_bounds", "length", "radius",
-    "toggleable_bounds", "toggleable_radius", "stream", "opaque",
+    "toggleable_bounds", "toggleable_radius", "toggleable_int", "stream",
+    "opaque",
 )
 
 
@@ -231,6 +233,8 @@ def snake_case(name: str) -> str:
 
 def title_case(text: str) -> str:
     """Matches jinja's `title` filter, which the path labels used to go through."""
+    # a snake_cased member name is words, not one word carrying underscores
+    text = text.replace("_", " ")
     return "".join(
         part[:1].upper() + part[1:].lower()
         for part in TITLE_SPLIT_RE.split(text)
@@ -411,6 +415,8 @@ def classify(cpp_type: str, is_enum: bool, is_variant: bool) -> tuple[str, str]:
             return "toggleable_bounds", "QVariantMap"
         if is_radius_type(inner):
             return "toggleable_radius", "QVariantMap"
+        if inner in ("int", "unsigned") or INTLIKE_RE.fullmatch(inner):
+            return "toggleable_int", "QVariantMap"
         return "opaque", ""
     if cpp_type in ("std::string", "QString"):
         return "string", "QString"
@@ -876,6 +882,10 @@ def flatten_paths(
     members: list[Member], struct_members_map: dict[str, list[Member]]
 ) -> list[str]:
     def _expand(member: Member, prefix: str, visiting: set[str]) -> list[str]:
+        # a variant alternative's leaf already knows where it sits inside its
+        # own struct ("compression/meshopt/level"), so only the prefix is added
+        if member.alternative is not None:
+            return [f"{prefix}{member.path}"]
         path = f"{prefix}{member.name}"
         nested_struct = _bare_type_name(member.cpp_type)
         if member.kind != "nested" or nested_struct in visiting:
@@ -904,6 +914,7 @@ def build_groups(
     struct_label: str,
     members: list[Member],
     paths: list[str],
+    struct_members_map: dict[str, list[Member]] | None = None,
 ) -> tuple[list[Group], dict[str, str], list[str]]:
     top_level = [p for p in paths if "/" not in p]
     groups: list[Group] = [Group(label=f"{struct_label} Properties", paths=top_level)]
@@ -914,12 +925,33 @@ def build_groups(
         if member.kind == "nested":
             prefix = f"{member.name}/"
             nested_paths = [p for p in paths if p.startswith(prefix)]
-            groups.append(Group(label=title_case(member.name), paths=nested_paths))
+            # a variant inside the nested configuration still wants a group per
+            # alternative, or the editor cannot tell which fields belong to the
+            # alternative currently held
+            nested_struct = _bare_type_name(member.cpp_type)
+            alternative_groups: list[Group] = []
+            for nested_member in (struct_members_map or {}).get(nested_struct, []):
+                if nested_member.kind != "variant":
+                    continue
+                for alt in nested_member.alternatives:
+                    alt_prefix = f"{prefix}{nested_member.path}/{alt.tag}/"
+                    alt_paths = [p for p in paths if p.startswith(alt_prefix)]
+                    if not alt_paths:
+                        continue
+                    alternative_groups.append(
+                        Group(label=alt.label, paths=alt_paths)
+                    )
+                    parent_names.update({p: alt.label for p in alt_paths})
+
+            claimed = {p for group in alternative_groups for p in group.paths}
+            own_paths = [p for p in nested_paths if p not in claimed]
+            groups.append(Group(label=title_case(member.name), paths=own_paths))
             # a configuration nested inside another one names itself after the
             # segment it sits under, however deep that is
             parent_names.update(
-                {p: title_case(p.split("/")[-2]) for p in nested_paths}
+                {p: title_case(p.split("/")[-2]) for p in own_paths}
             )
+            groups.extend(alternative_groups)
             if member.folded:
                 folded_paths.extend(nested_paths)
         elif member.kind == "variant":
@@ -1003,7 +1035,9 @@ def process_cpp_header(
 
         label = format_struct_name(parsed.name)
         paths = flatten_paths(members, struct_members_map)
-        groups, parent_names, folded_paths = build_groups(label, members, paths)
+        groups, parent_names, folded_paths = build_groups(
+            label, members, paths, struct_members_map
+        )
 
         rendered_structs.append(
             {

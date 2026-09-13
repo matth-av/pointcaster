@@ -157,6 +157,13 @@ public:
     emit fieldChanged(path);
   }
 
+  // a structure change makes the editor tear down and rebuild its field
+  // delegates
+  void notifyStructureChanged() {
+    QMetaObject::invokeMethod(
+        this, [this] { emit structureChanged(); }, Qt::QueuedConnection);
+  }
+
   // true while notifyAllFieldsChanged() is walking this adapter's paths...
   bool isRefreshingAllFields() const { return _refreshingAllFields; }
 

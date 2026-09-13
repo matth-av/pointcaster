@@ -818,15 +818,18 @@ void WorkspaceModel::applyWorkspaceConfigAndRebuild(
     pc::WorkspaceConfiguration new_config, RebuildScope scope) {
   const bool sync_devices =
       (scope == RebuildScope::Devices || scope == RebuildScope::All);
+  {
+    std::scoped_lock lock(_workspace.config_access);
+    if (_pointStreamerAdapter) {
+      _pointStreamerAdapter->setConfig(
+          pc::ConfigurationVariant{new_config.point_streamer.value()});
+    }
+    if (_publishersConfigAdapter) {
+      _publishersConfigAdapter->setConfig(
+          pc::ConfigurationVariant{new_config.publishers.value()});
+    }
+  }
   _workspace.apply_new_config(std::move(new_config), sync_devices);
-  if (_pointStreamerAdapter) {
-    _pointStreamerAdapter->setConfig(
-        pc::ConfigurationVariant{_workspace.config.point_streamer.value()});
-  }
-  if (_publishersConfigAdapter) {
-    _publishersConfigAdapter->setConfig(
-        pc::ConfigurationVariant{_workspace.config.publishers.value()});
-  }
   switch (scope) {
   case RebuildScope::None: {
     break;
@@ -2660,6 +2663,18 @@ void WorkspaceModel::initPointStreamerAdapter() {
           const bool changed = adapter->apply(path, value);
           if (!changed) return;
           after = _workspace.config.point_streamer.value();
+
+          if (path == QStringLiteral("codec_config/codec")) {
+            using Codec = pc::CodecConfiguration;
+            auto &compression =
+                after.codec_config.value().compression.value().variant();
+            switch (value.toInt()) {
+            case 0: compression = Codec::NoCompressionConfiguration{}; break;
+            case 1: compression = Codec::MeshoptCompressionConfiguration{}; break;
+            case 2: compression = Codec::DracoCompressionConfiguration{}; break;
+            default: break;
+            }
+          }
         }
 
         QString command_text = QStringLiteral("Edit %1").arg(path);
@@ -2670,10 +2685,17 @@ void WorkspaceModel::initPointStreamerAdapter() {
               QMetaObject::invokeMethod(
                   this,
                   [this, config = std::move(config)]() mutable {
-                    _workspace.apply_new_config(std::move(config), false);
-                    if (_pointStreamerAdapter)
+                    // the adapter's reference points into the live config, so
+                    // it has to be handed the incoming value while it still
+                    // holds the old one. diffing after apply_new_config
+                    // compares the new value against itself and reports
+                    // nothing changed
+                    if (_pointStreamerAdapter) {
+                      std::scoped_lock lock(_workspace.config_access);
                       _pointStreamerAdapter->setConfig(pc::ConfigurationVariant{
-                          _workspace.config.point_streamer.value()});
+                          config.point_streamer.value()});
+                    }
+                    _workspace.apply_new_config(std::move(config), false);
                   },
                   Qt::QueuedConnection);
             }));
@@ -2732,11 +2754,14 @@ void WorkspaceModel::initPublishersConfigAdapter() {
               QMetaObject::invokeMethod(
                   this,
                   [this, config = std::move(config)]() mutable {
-                    _workspace.apply_new_config(std::move(config), false);
-                    if (_publishersConfigAdapter)
+                    // as above: the adapter has to diff against the value it
+                    // still holds, before the live config is overwritten
+                    if (_publishersConfigAdapter) {
+                      std::scoped_lock lock(_workspace.config_access);
                       _publishersConfigAdapter->setConfig(
-                          pc::ConfigurationVariant{
-                              _workspace.config.publishers.value()});
+                          pc::ConfigurationVariant{config.publishers.value()});
+                    }
+                    _workspace.apply_new_config(std::move(config), false);
                   },
                   Qt::QueuedConnection);
             }));

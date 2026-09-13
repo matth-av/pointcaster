@@ -69,6 +69,26 @@ Column {
             width: root.width
             implicitHeight: contentColumn.implicitHeight
 
+            property var visiblePaths: nodeRoot.visibleFieldPaths()
+
+            function visibleFieldPaths() {
+                if (!root.configAdapter)
+                    return [];
+                return modelData.filter(function (path) {
+                    const hidden = root.configAdapter.isHidden(path);
+                    // for now just hide variant type selection
+                    const variant = root.configAdapter.isVariant(path);
+                    return !hidden && !variant;
+                });
+            }
+
+            Connections {
+                target: root.configAdapter
+                function onStructureChanged() {
+                    nodeRoot.visiblePaths = nodeRoot.visibleFieldPaths();
+                }
+            }
+
             visible: fieldRepeater.count > 0
 
             color: flattened ? "transparent" : ThemeColors.dark
@@ -146,12 +166,7 @@ Column {
                 Repeater {
                     id: fieldRepeater
 
-                    model: modelData.filter(function (path) {
-                        const hidden = root.configAdapter.isHidden(path);
-                        // for now just hide variant type selection
-                        const variant = root.configAdapter.isVariant(path);
-                        return !hidden && !variant;
-                    })
+                    model: nodeRoot.visiblePaths
 
                     delegate: Item {
                         id: fieldRow
@@ -348,7 +363,7 @@ Column {
                                                 return streamEditor;
                                             if (root.configAdapter.isEnum(modelData))
                                                 return enumEditor;
-                                            if (typeName === "int" || typeName === "int32" || typeName === "int32_t" || typeName === "integer")
+                                            if (typeName === "int" || typeName === "int32" || typeName === "int32_t" || typeName === "integer" || typeName === "toggleable<int>")
                                                 return intEditor;
                                             if (typeName === "float" || typeName === "float32" || typeName === "float32_t" || typeName === "double" || typeName === "real" || typeName === "number")
                                                 return floatEditor;
@@ -707,14 +722,20 @@ Column {
 
             minValue: root.configAdapter ? root.configAdapter.minMax(path)[0] : undefined
             maxValue: root.configAdapter ? root.configAdapter.minMax(path)[1] : undefined
-            defaultValue: root.configAdapter ? root.configAdapter.defaultValue(path) : undefined
+            defaultValue: root.configAdapter ? intEditorControl.numberOf(root.configAdapter.defaultValue(path)) : undefined
 
             enabled: root.configAdapter ? !root.configAdapter.isDisabled(path) : true
 
-            boundValue: {
-                var n = root.configAdapter ? Number(root.configAdapter.value(path)) : 0;
+            // a Toggleable arrives as a map carrying the switch alongside the
+            // number, a plain int arrives as itself
+            function numberOf(held) {
+                if (held === undefined || held === null)
+                    return 0;
+                const n = Number(held.value !== undefined ? held.value : held);
                 return isNaN(n) ? 0 : Math.trunc(n);
             }
+
+            boundValue: root.configAdapter ? intEditorControl.numberOf(root.configAdapter.value(path)) : 0
 
             onPreviewValue: function (value) {
                 root.configAdapter.setPreview(path, value);
