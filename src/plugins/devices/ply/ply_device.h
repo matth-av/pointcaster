@@ -83,6 +83,8 @@ private:
 
   bool load_directory(const std::filesystem::path &dir);
 
+  void reload_current_frame();
+
   void apply_transform();
 };
 

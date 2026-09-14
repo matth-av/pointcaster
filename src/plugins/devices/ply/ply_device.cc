@@ -5,8 +5,6 @@
 // #include <core/profiling/profiling_zone.h>
 #include <cstring>
 #include <filesystem>
-#include <happly.h>
-#include <oneapi/tbb/parallel_for.h>
 #include <plugins/backend/backend_types.h>
 #include <plugins/backend/cpu/cpu_backend.h>
 #include <plugins/devices/device_tree.h>
@@ -51,59 +49,17 @@ bool PlyDevice::load(std::string_view url) {
 
   pc::logger()->trace("PlyDevice::load: parsing '{}'", path_str);
 
-  std::optional<happly::PLYData> ply_in;
-  try {
-    ply_in.emplace(path_str);
-  } catch (const std::runtime_error &e) {
-    pc::logger()->error("PlyDevice::load: exception parsing file: {}",
-                        e.what());
-    return false;
-  }
-  pc::logger()->trace("PlyDevice::load: happly parsed ok");
+  const auto position_units =
+      std::get<PlyDeviceConfiguration>(_config).position_units.value();
 
-  constexpr auto vertex = "vertex";
-
-  std::vector<short> x_values, y_values, z_values;
-  std::vector<unsigned char> r_values, g_values, b_values;
-  try {
-    x_values = ply_in->getElement(vertex).getProperty<short>("x");
-    y_values = ply_in->getElement(vertex).getProperty<short>("y");
-    z_values = ply_in->getElement(vertex).getProperty<short>("z");
-    r_values = ply_in->getElement(vertex).getProperty<unsigned char>("red");
-    g_values = ply_in->getElement(vertex).getProperty<unsigned char>("green");
-    b_values = ply_in->getElement(vertex).getProperty<unsigned char>("blue");
-  } catch (const std::exception &e) {
-    pc::logger()->error("PlyDevice::load: property read failed: {}", e.what());
+  auto input_cloud = ply::read_point_cloud(path_str, position_units);
+  if (!input_cloud) {
+    pc::logger()->error("PlyDevice::load: could not read '{}'", path_str);
     return false;
   }
 
-  pc::logger()->trace("PlyDevice::load: counts x={} y={} z={} r={} g={} b={}",
-                      x_values.size(), y_values.size(), z_values.size(),
-                      r_values.size(), g_values.size(), b_values.size());
-
-  const size_t point_count = x_values.size();
-  if (y_values.size() != point_count || z_values.size() != point_count ||
-      r_values.size() != point_count || g_values.size() != point_count ||
-      b_values.size() != point_count) {
-    pc::logger()->error(
-        "PlyDevice::load: vertex property arrays differ in length, aborting");
-    return false;
-  }
-
-  auto input_cloud = std::make_shared<PointCloud>();
-  input_cloud->resize(point_count);
-
-  tbb::parallel_for(
-      tbb::blocked_range<size_t>(0, point_count),
-      [&](const tbb::blocked_range<size_t> &range) {
-        for (size_t i = range.begin(), e = range.end(); i < e; ++i) {
-          input_cloud->positions[i] = {x_values[i], y_values[i], z_values[i]};
-          input_cloud->colors[i] = {r_values[i], g_values[i], b_values[i]};
-        }
-      });
-
-  pc::logger()->trace("PlyDevice::load: packed {} points, applying transform",
-                      point_count);
+  pc::logger()->trace("PlyDevice::load: read {} points, applying transform",
+                      input_cloud->size());
 
   _input_cloud = std::move(input_cloud);
   _loaded_file_path = std::string(url);
@@ -124,6 +80,7 @@ bool PlyDevice::load_directory(const std::filesystem::path &dir) {
           static_cast<size_t>(std::max(8, seq.buffer_capacity.value())),
       .prefetch_ahead =
           static_cast<size_t>(std::max(1, seq.prefetch_ahead.value())),
+      .position_units = config.position_units.value(),
   };
 
   if (!_sequence_loader->open(dir, loader_config)) {
@@ -210,6 +167,11 @@ void PlyDevice::tick(float delta_time) {
   _sequence_loader->set_loop(static_cast<size_t>(start),
                              static_cast<size_t>(end));
 
+  reload_current_frame();
+}
+
+void PlyDevice::reload_current_frame() {
+  if (!_sequence_loader) return;
   if (auto frame =
           _sequence_loader->get_frame(static_cast<size_t>(_current_frame))) {
     _input_cloud = std::move(frame);
@@ -242,6 +204,18 @@ void PlyDevice::on_config_field_changed(std::string_view path) {
     }
   }
 
+  if (path.find("position_units") != std::string_view::npos) {
+    if (_sequence_loader) {
+      _sequence_loader->set_position_units(config.position_units.value());
+      reload_current_frame();
+      return;
+    }
+    const auto file_path = config.file.value().path;
+    lock.unlock();
+    load(file_path);
+    return;
+  }
+
   // sequence config changes
   if (_sequence_loader && path.find("sequence") != std::string_view::npos) {
     if (path.find("buffer_capacity") != std::string_view::npos ||
@@ -269,12 +243,7 @@ void PlyDevice::on_config_field_changed(std::string_view path) {
 
       _sequence_loader->set_loop(static_cast<size_t>(start),
                                  static_cast<size_t>(end));
-      auto frame =
-          _sequence_loader->get_frame(static_cast<size_t>(_current_frame));
-      if (frame) {
-        _input_cloud = std::move(frame);
-        apply_transform();
-      }
+      reload_current_frame();
       return;
     }
   }

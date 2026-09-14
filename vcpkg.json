@@ -33,10 +33,10 @@
 				"concurrentqueue",
 				"corrade",
 				"gizmo3d",
-				"happly",
 				"kddockwidgets",
 				"liblo",
 				"libcpplocate",
+				"miniply",
 				"msgpack",
 				{
 					"name": "opencv4",

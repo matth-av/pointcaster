@@ -4,6 +4,7 @@ corrade_add_static_plugin(
   ""
   PlyDevice.conf
   ply_device.cc
+  ply_layout.cc
   ply_sequence_loader.cc
   ${CMAKE_SOURCE_DIR}/src/ui/models/enum_adapters.h
 )
@@ -12,21 +13,20 @@ set_target_properties(PlyDevice PROPERTIES AUTOMOC OFF)
 
 find_package(TBB REQUIRED)
 find_package(Boost REQUIRED COMPONENTS interprocess)
+find_package(unofficial-miniply CONFIG REQUIRED)
 
 target_link_libraries(PlyDevice PRIVATE
   pointcaster::core
   Corrade::PluginManager
   TBB::tbb
   Boost::interprocess
+  unofficial::miniply::miniply
 )
-
-find_path(HAPPLY_INCLUDE_DIRS "happly.h")
 
 target_include_directories(PlyDevice
   PRIVATE
   "${CMAKE_SOURCE_DIR}/src"
   "${CMAKE_SOURCE_DIR}/include"
-  ${HAPPLY_INCLUDE_DIRS}
   ${TBB_INCLUDE_DIRS}
 )
 

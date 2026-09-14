@@ -16,6 +16,10 @@ namespace pc::devices {
 class PlyDevice;
 
 struct PlyDeviceConfiguration {
+  // Automatic reads floating point positions as metres and integer ones as
+  // the millimetres they are already held in
+  enum class PositionUnits { Automatic, Millimetres, Centimetres, Metres };
+
   std::string id; // @hidden
 
   rfl::DefaultVal<std::string> label;     // @hidden
@@ -23,6 +27,7 @@ struct PlyDeviceConfiguration {
   rfl::DefaultVal<int> order = 0;         // @hidden
 
   rfl::DefaultVal<FileFolderConfiguration> file;
+  rfl::DefaultVal<PositionUnits> position_units = PositionUnits::Automatic;
   rfl::DefaultVal<SequenceConfiguration> sequence; // @folded
   rfl::DefaultVal<TransformConfiguration> transform;
   rfl::DefaultVal<ColorTransformConfiguration> color; // @folded
