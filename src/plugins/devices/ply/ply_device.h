@@ -13,7 +13,6 @@
 #include <Corrade/PluginManager/AbstractPlugin.h>
 #include <atomic>
 #include <chrono>
-#include <optional>
 #include <plugins/backend/backend_plugin.h>
 #include <readerwriterqueue/readerwritercircularbuffer.h>
 #include <string_view>
@@ -61,14 +60,14 @@ public:
   void on_session_membership_changed(bool in_any_session) override;
 
   void tick(float delta_time);
-  bool is_sequence() const override { return _sequence_loader.has_value(); }
+  bool is_sequence() const override { return _sequence_loader != nullptr; }
   size_t frame_count() const override;
 
 private:
   DeviceStatus _status = DeviceStatus::Unloaded;
 
   std::string _loaded_file_path{};
-  std::optional<ply::PlySequenceLoader> _sequence_loader;
+  std::shared_ptr<ply::PlySequenceLoader> _sequence_loader;
   float _frame_accumulator = 0.f;
   int _current_frame = 0;
 

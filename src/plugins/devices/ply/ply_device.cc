@@ -16,7 +16,24 @@ namespace pc::devices {
 
 // using pc::profiling::ProfilingZone;
 
+namespace {
+
+ply::PlySequenceLoader::Config
+sequence_loader_config(PlyDeviceConfiguration &config) {
+  auto &sequence = config.sequence.value();
+  return {
+      .buffer_capacity =
+          static_cast<size_t>(std::max(8, sequence.buffer_capacity.value())),
+      .prefetch_ahead =
+          static_cast<size_t>(std::max(1, sequence.prefetch_ahead.value())),
+      .position_units = config.position_units.value(),
+  };
+}
+
+} // namespace
+
 PlyDevice::~PlyDevice() {
+  if (_sequence_loader) _sequence_loader->invalidate();
   _tick_thread.request_stop();
   if (_tick_thread.joinable()) _tick_thread.join();
 }
@@ -70,20 +87,11 @@ bool PlyDevice::load(std::string_view url) {
 
 bool PlyDevice::load_directory(const std::filesystem::path &dir) {
   auto &config = std::get<PlyDeviceConfiguration>(_config);
-  auto &seq = config.sequence.value();
 
   _input_cloud.reset();
-  _sequence_loader.emplace();
+  _sequence_loader = std::make_shared<ply::PlySequenceLoader>();
 
-  ply::PlySequenceLoader::Config loader_config{
-      .buffer_capacity =
-          static_cast<size_t>(std::max(8, seq.buffer_capacity.value())),
-      .prefetch_ahead =
-          static_cast<size_t>(std::max(1, seq.prefetch_ahead.value())),
-      .position_units = config.position_units.value(),
-  };
-
-  if (!_sequence_loader->open(dir, loader_config)) {
+  if (!_sequence_loader->open(dir, sequence_loader_config(config))) {
     _sequence_loader.reset();
     // _status = DeviceStatus::Error;
     return false;
@@ -220,7 +228,9 @@ void PlyDevice::on_config_field_changed(std::string_view path) {
   if (_sequence_loader && path.find("sequence") != std::string_view::npos) {
     if (path.find("buffer_capacity") != std::string_view::npos ||
         path.find("prefetch_ahead") != std::string_view::npos) {
-      _sequence_loader->invalidate();
+      const auto loader_config = sequence_loader_config(config);
+      _sequence_loader->set_capacity(loader_config.buffer_capacity,
+                                     loader_config.prefetch_ahead);
       return;
     }
 
