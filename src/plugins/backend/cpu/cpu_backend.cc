@@ -282,16 +282,21 @@ void CpuBackend::pack_render_buffer(const PointCloud &cloud,
   if (output.empty()) return;
 
   const auto count = cloud.size();
+  const auto stride = render_vertex_stride(cloud);
+  const auto point_scales = cloud.get<float>(point_scale_attribute);
   const auto indices = std::views::iota(size_t{0}, count);
   auto *out_bytes = reinterpret_cast<char *>(output.data());
 
-  std::for_each(std::execution::par_unseq, indices.begin(), indices.end(),
-                [&](size_t i) {
-                  std::memcpy(out_bytes + i * 16, &cloud.positions[i], 8);
-                  std::memcpy(out_bytes + i * 16 + 8, &cloud.colors[i], 4);
-                  float idx = static_cast<float>(i);
-                  std::memcpy(out_bytes + i * 16 + 12, &idx, 4);
-                });
+  std::for_each(
+      std::execution::par_unseq, indices.begin(), indices.end(), [&](size_t i) {
+        std::memcpy(out_bytes + i * stride, &cloud.positions[i], 8);
+        std::memcpy(out_bytes + i * stride + 8, &cloud.colors[i], 4);
+        float idx = static_cast<float>(i);
+        std::memcpy(out_bytes + i * stride + 12, &idx, 4);
+        if (i < point_scales.size()) {
+          std::memcpy(out_bytes + i * stride + 16, &point_scales[i], 4);
+        }
+      });
 };
 
 void CpuBackend::project_frame(const PointCloud &cloud,

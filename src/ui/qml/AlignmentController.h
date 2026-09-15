@@ -39,11 +39,15 @@ class AlignmentController : public QObject {
 
   Q_PROPERTY(QByteArray primaryRenderData READ primaryRenderData NOTIFY
                  snapshotChanged)
+  Q_PROPERTY(int primaryRenderStride READ primaryRenderStride NOTIFY
+                 snapshotChanged)
   Q_PROPERTY(
       QVector3D primaryBoundsMin READ primaryBoundsMin NOTIFY snapshotChanged)
   Q_PROPERTY(
       QVector3D primaryBoundsMax READ primaryBoundsMax NOTIFY snapshotChanged)
   Q_PROPERTY(QByteArray secondaryRenderData READ secondaryRenderData NOTIFY
+                 snapshotChanged)
+  Q_PROPERTY(int secondaryRenderStride READ secondaryRenderStride NOTIFY
                  snapshotChanged)
   Q_PROPERTY(QVector3D secondaryBoundsMin READ secondaryBoundsMin NOTIFY
                  snapshotChanged)
@@ -54,9 +58,11 @@ public:
   explicit AlignmentController(QObject *parent = nullptr);
 
   QByteArray primaryRenderData() const { return _primaryRenderData; }
+  int primaryRenderStride() const { return _primaryRenderStride; }
   QVector3D primaryBoundsMin() const { return _primaryBoundsMin; }
   QVector3D primaryBoundsMax() const { return _primaryBoundsMax; }
   QByteArray secondaryRenderData() const { return _secondaryRenderData; }
+  int secondaryRenderStride() const { return _secondaryRenderStride; }
   QVector3D secondaryBoundsMin() const { return _secondaryBoundsMin; }
   QVector3D secondaryBoundsMax() const { return _secondaryBoundsMax; }
 
@@ -113,8 +119,10 @@ private:
   std::shared_ptr<pc::PointCloud> _secondarySnapshot;
 
   QByteArray _primaryRenderData;
+  int _primaryRenderStride = 16;
   QVector3D _primaryBoundsMin, _primaryBoundsMax;
   QByteArray _secondaryRenderData;
+  int _secondaryRenderStride = 16;
   QVector3D _secondaryBoundsMin, _secondaryBoundsMax;
 
   bool _hasResult = false;

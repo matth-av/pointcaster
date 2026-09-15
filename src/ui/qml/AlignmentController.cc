@@ -88,6 +88,7 @@ void AlignmentController::snapshotClouds(QObject *primaryAdapter,
     _primaryRenderData =
         QByteArray(reinterpret_cast<const char *>(primaryRender->data()),
                    static_cast<qsizetype>(primaryRender->size()));
+    _primaryRenderStride = static_cast<int>(pc::render_vertex_stride(*primary));
     const auto &b = primary->bounds;
     _primaryBoundsMin = QVector3D(b.min.x, b.min.y, b.min.z);
     _primaryBoundsMax = QVector3D(b.max.x, b.max.y, b.max.z);
@@ -97,6 +98,8 @@ void AlignmentController::snapshotClouds(QObject *primaryAdapter,
     _secondaryRenderData =
         QByteArray(reinterpret_cast<const char *>(secondaryRender->data()),
                    static_cast<qsizetype>(secondaryRender->size()));
+    _secondaryRenderStride =
+        static_cast<int>(pc::render_vertex_stride(*secondary));
     const auto &b = secondary->bounds;
     _secondaryBoundsMin = QVector3D(b.min.x, b.min.y, b.min.z);
     _secondaryBoundsMax = QVector3D(b.max.x, b.max.y, b.max.z);

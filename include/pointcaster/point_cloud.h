@@ -96,6 +96,12 @@ public:
                          std::span<const uint32_t> indices) const;
 };
 
+// the packed render buffer can either contain just positions and colors or
+// additionally point scales too
+inline size_t render_vertex_stride(const PointCloud &cloud) {
+  return cloud.attributes.contains(point_scale_attribute) ? 20 : 16;
+}
+
 POINTCASTER_CORE_EXPORT PointCloud operator+(PointCloud const &lhs,
                                              PointCloud const &rhs);
 

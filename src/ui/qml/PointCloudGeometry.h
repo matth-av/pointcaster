@@ -20,6 +20,8 @@ class PointCloudGeometry : public QQuick3DGeometry {
 
   Q_PROPERTY(bool enabled READ enabled WRITE setEnabled NOTIFY enabledChanged)
 
+  Q_PROPERTY(bool hasPointScale READ hasPointScale NOTIFY hasPointScaleChanged)
+
   Q_PROPERTY(QVector3D boundsMin READ boundsMin NOTIFY boundsChanged)
   Q_PROPERTY(QVector3D boundsMax READ boundsMax NOTIFY boundsChanged)
   Q_PROPERTY(QVector3D boundsCenter READ boundsCenter NOTIFY boundsChanged)
@@ -33,6 +35,8 @@ public:
   bool enabled() const { return _enabled; }
   void setEnabled(bool enabled); 
 
+  bool hasPointScale() const { return _hasPointScale; }
+
   QVector3D boundsMin() const { return _boundsMin; }
   QVector3D boundsMax() const { return _boundsMax; }
   QVector3D boundsCenter() const { return _boundsCenter; }
@@ -41,7 +45,7 @@ public:
 
   Q_INVOKABLE void reset();
 
-  Q_INVOKABLE void setStaticData(const QByteArray &vertexData,
+  Q_INVOKABLE void setStaticData(const QByteArray &vertexData, int stride,
                                  const QVector3D &boundsMin,
                                  const QVector3D &boundsMax);
 
@@ -50,6 +54,7 @@ public:
 signals:
   void pointCloudAdapterChanged();
   void enabledChanged();
+  void hasPointScaleChanged();
   void boundsChanged();
 
 private:
@@ -57,6 +62,8 @@ private:
   bool _enabled = true;
 
   QByteArray _vertexBuffer;
+  int _stride = 16;
+  bool _hasPointScale = false;
 
   QVector3D _boundsMin;
   QVector3D _boundsMax;

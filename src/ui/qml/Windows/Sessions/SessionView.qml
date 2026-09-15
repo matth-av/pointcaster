@@ -478,6 +478,7 @@ Item {
                     PointCloudMaterial {
                         uPointSize: viewController.shaderPointSize
                         uViewportHeight: viewController.shaderViewportHeight
+                        uHasPointScale: sessionGeo.hasPointScale
                     }
                 ]
             }

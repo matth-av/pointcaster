@@ -401,8 +401,8 @@ Item {
     }
 
     function activate() {
-        primaryGeo.setStaticData(root.alignmentController.primaryRenderData, root.alignmentController.primaryBoundsMin, root.alignmentController.primaryBoundsMax);
-        secondaryGeo.setStaticData(root.alignmentController.secondaryRenderData, root.alignmentController.secondaryBoundsMin, root.alignmentController.secondaryBoundsMax);
+        primaryGeo.setStaticData(root.alignmentController.primaryRenderData, root.alignmentController.primaryRenderStride, root.alignmentController.primaryBoundsMin, root.alignmentController.primaryBoundsMax);
+        secondaryGeo.setStaticData(root.alignmentController.secondaryRenderData, root.alignmentController.secondaryRenderStride, root.alignmentController.secondaryBoundsMin, root.alignmentController.secondaryBoundsMax);
         orbitOrigin.position = primaryGeo.boundsCenter;
     }
 }

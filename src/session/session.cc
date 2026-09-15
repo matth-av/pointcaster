@@ -77,7 +77,7 @@ void Session::on_pipeline_output(operators::PipelineFramePtr output_frame) {
   if (!output_frame) return;
   auto cloud = output_frame->cloud;
   if (auto *cpu = _backends.cpu(); cloud && !cloud->empty() && cpu) {
-    auto buf = std::make_shared<std::vector<std::byte>>(cloud->size() * 16);
+    auto buf = std::make_shared<std::vector<std::byte>>(cloud->size() * render_vertex_stride(*cloud));
     cpu->pack_render_buffer(*cloud, *buf);
     _latest_render_data.store(std::move(buf), std::memory_order_release);
   }

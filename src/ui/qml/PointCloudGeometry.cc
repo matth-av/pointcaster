@@ -38,12 +38,19 @@ void PointCloudGeometry::updateGeometry() {
       QByteArray(reinterpret_cast<const char *>(render_buffer->data()),
                  static_cast<qsizetype>(render_buffer->size()));
 
+  // if the stride is wider than the base size, we know a point scale is also
+  // packed in the buffer too...
+  _stride = static_cast<int>(render_buffer->size() / cloud->size());
+  const auto had_point_scale = _hasPointScale;
+  _hasPointScale = _stride >= 20;
+
   clear();
   setVertexData(_vertexBuffer);
-  setStride(16);
+  setStride(_stride);
   setPrimitiveType(QQuick3DGeometry::PrimitiveType::Points);
   addAttribute(Attribute::PositionSemantic, 0, Attribute::F32Type);
   addAttribute(Attribute::TexCoord0Semantic, 12, Attribute::F32Type);
+  if (had_point_scale != _hasPointScale) emit hasPointScaleChanged();
 
   const auto &bounds = cloud->bounds;
   _boundsMin = QVector3D(bounds.min.x, bounds.min.y, bounds.min.z);
@@ -64,13 +71,14 @@ void PointCloudGeometry::reset() {
   update();
 }
 
-void PointCloudGeometry::setStaticData(const QByteArray &vertexData,
+void PointCloudGeometry::setStaticData(const QByteArray &vertexData, int stride,
                                        const QVector3D &boundsMin,
                                        const QVector3D &boundsMax) {
   _vertexBuffer = vertexData;
+  _stride = stride;
   clear();
   setVertexData(_vertexBuffer);
-  setStride(16);
+  setStride(_stride);
   setPrimitiveType(QQuick3DGeometry::PrimitiveType::Points);
   addAttribute(Attribute::PositionSemantic, 0, Attribute::F32Type);
   addAttribute(Attribute::TexCoord0Semantic, 12, Attribute::F32Type);
@@ -83,9 +91,8 @@ void PointCloudGeometry::setStaticData(const QByteArray &vertexData,
 }
 
 QVector3D PointCloudGeometry::pointPosition(int index) const {
-  constexpr int stride = 16;
-  const int byteOffset = index * stride;
-  if (byteOffset + stride > _vertexBuffer.size()) return {};
+  const int byteOffset = index * _stride;
+  if (byteOffset + _stride > _vertexBuffer.size()) return {};
 
   const char *data = _vertexBuffer.constData() + byteOffset;
   int32_t raw[2];

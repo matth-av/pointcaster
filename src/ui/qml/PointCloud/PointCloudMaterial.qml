@@ -12,6 +12,8 @@ CustomMaterial {
 
     property real uViewportHeight: 1080.0
 
-    property real uMinPointPixels: 1.0
+    property bool uHasPointScale: false
+
+    property real uMinPointPixels: 0.25
     property real uMaxPointPixels: 64.0
 }

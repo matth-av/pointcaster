@@ -642,7 +642,7 @@ void OrbbecDevice::rgbd_pipeline_thread_work(
                                           std::memory_order_release);
               } else if (auto processed = _pipeline->latest_cloud()) {
                 auto render_buffer = std::make_shared<std::vector<std::byte>>(
-                    processed->size() * 16);
+                    processed->size() * render_vertex_stride(*processed));
                 cpu->pack_render_buffer(*processed, *render_buffer);
                 _latest_render_data.store(std::move(render_buffer),
                                           std::memory_order_release);
@@ -925,7 +925,7 @@ void OrbbecDevice::lidar_pipeline_thread_work(
         if (auto *cpu = cpu_backend(); cpu) {
           if (auto processed = _pipeline->latest_cloud()) {
             auto render_buffer = std::make_shared<std::vector<std::byte>>(
-                processed->size() * 16);
+                processed->size() * render_vertex_stride(*processed));
             cpu->pack_render_buffer(*processed, *render_buffer);
             _latest_render_data.store(std::move(render_buffer),
                                       std::memory_order_release);
