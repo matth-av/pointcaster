@@ -385,17 +385,28 @@ std::shared_ptr<PointCloud> read_point_cloud(const std::string &path,
   std::vector<std::span<float>> attribute_values;
   attribute_values.reserve(layout.attributes.size());
   for (const auto index : layout.attributes) {
+    const std::string_view name = element->properties[index].name;
     attribute_values.push_back(
-        cloud->add<float>(element->properties[index].name));
+        cloud->add<float>(name == "pscale" ? point_scale_attribute : name));
   }
 
   if (element->count == 0) return cloud;
 
-  if (reader.file_type() == miniply::PLYFileType::ASCII) {
-    return read_ascii(reader, layout, position_scale, cloud, attribute_values);
+  auto filled =
+      reader.file_type() == miniply::PLYFileType::ASCII
+          ? read_ascii(reader, layout, position_scale, cloud, attribute_values)
+          : read_mapped(path, reader, layout, position_scale, cloud,
+                        attribute_values);
+  if (!filled) return nullptr;
+
+  // a point scale is a world space radius, so it takes units in 'position'
+  // space (mm)
+  if (position_scale != 1.0f) {
+    for (auto &value : filled->get<float>(point_scale_attribute)) {
+      value *= position_scale;
+    }
   }
-  return read_mapped(path, reader, layout, position_scale, cloud,
-                     attribute_values);
+  return filled;
 }
 
 } // namespace pc::devices::ply

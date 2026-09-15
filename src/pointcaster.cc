@@ -4,6 +4,7 @@
 #include <core/logger/logger.h>
 #include <core/profiling/profiler.h>
 #include <optional>
+#include <pointcaster/point_cloud.h>
 #include <pointcaster/task_pool.h>
 #include <print>
 #include <tracy/Tracy.hpp>
@@ -35,6 +36,16 @@ int main(int argc, char *argv[]) {
   QObject::connect(app_settings, &pc::AppSettings::logLevelChanged,
                    app_settings,
                    [&] { pc::set_log_level(app_settings->spdlogLogLevel()); });
+
+  // the preference is a diameter in millimetres, the radius a point without a
+  // scale of its own draws at is half of it
+  const auto apply_point_size_pref = [&] {
+    pc::default_point_scale_millimetres().store(app_settings->pointSize() *
+                                                0.5f);
+  };
+  apply_point_size_pref();
+  QObject::connect(app_settings, &pc::AppSettings::pointSizeChanged,
+                   app_settings, apply_point_size_pref);
 
   const auto apply_worker_thread_prefs = [&] {
     pc::set_task_pool_size(

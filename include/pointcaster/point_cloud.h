@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core_types.h"
+#include <atomic>
 #include <codec/codec_config.h>
 #include <cstddef>
 #include <cstdint>
@@ -16,6 +17,13 @@
 #include <vector>
 
 namespace pc {
+
+// a per-point radius, held in the same millimetre space as positions
+inline constexpr std::string_view point_scale_attribute = "point_scale";
+
+// the radius a point draws at when the cloud doesn't have its own point_scale
+// attribute. based on the point size set in the app preferences window
+POINTCASTER_CORE_EXPORT std::atomic<float> &default_point_scale_millimetres();
 
 class PointCloud {
 public:

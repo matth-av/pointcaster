@@ -133,6 +133,23 @@ void PointCloud::gather_attributes_into(
   destination.attributes = std::move(gathered);
 }
 
+std::atomic<float> &default_point_scale_millimetres() {
+  static std::atomic<float> millimetres{2.5f};
+  return millimetres;
+}
+
+// the default value a point takes for an attribute its own cloud didn't already
+// carry... this is usually just the default constructor {} but point_scale
+// needs to be specialised
+template <typename T> T default_attribute_value(std::string_view name) {
+  if constexpr (std::is_same_v<T, float>) {
+    if (name == point_scale_attribute) {
+      return default_point_scale_millimetres().load(std::memory_order_relaxed);
+    }
+  }
+  return T{};
+}
+
 PointCloud &operator+=(PointCloud &lhs, PointCloud const &rhs) {
   const auto appended_size = rhs.size();
   if (appended_size == 0) return lhs;
@@ -167,7 +184,8 @@ PointCloud &operator+=(PointCloud &lhs, PointCloud const &rhs) {
           if (appended && appended->size() == appended_size) {
             values.insert(values.end(), appended->begin(), appended->end());
           } else {
-            values.resize(original_size + appended_size);
+            values.resize(original_size + appended_size,
+                          default_attribute_value<element>(name));
           }
         },
         storage);
@@ -180,9 +198,10 @@ PointCloud &operator+=(PointCloud &lhs, PointCloud const &rhs) {
     std::visit(
         [&](const auto &values) {
           using element = typename std::decay_t<decltype(values)>::value_type;
-          std::vector<element> merged(original_size);
+          const auto missing = default_attribute_value<element>(name);
+          std::vector<element> merged(original_size, missing);
           merged.insert(merged.end(), values.begin(), values.end());
-          merged.resize(original_size + appended_size);
+          merged.resize(original_size + appended_size, missing);
           lhs.attributes.emplace(name, std::move(merged));
         },
         storage);
