@@ -55,6 +55,7 @@ find_package(Corrade CONFIG REQUIRED Main PluginManager)
 find_package(CUDAToolkit REQUIRED COMPONENTS cudart)
 
 find_package(Thrust REQUIRED CONFIG)
+find_package(TBB REQUIRED)
 
 thrust_create_target(Thrust DEVICE CUDA)
 target_link_libraries(Thrust INTERFACE CUDA::toolkit)
@@ -63,6 +64,7 @@ target_link_libraries(cuda_backend_core PUBLIC
   pointcaster::core
   CUDA::toolkit
   Thrust
+  TBB::tbb
 )
 
 target_link_libraries(CudaBackend PRIVATE

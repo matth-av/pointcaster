@@ -10,12 +10,14 @@
 #include <stdexcept>
 #include <thrust/device_vector.h>
 #include <thrust/execution_policy.h>
+#include <thrust/fill.h>
 #include <thrust/host_vector.h>
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/iterator/transform_iterator.h>
 #include <thrust/iterator/zip_iterator.h>
 #include <thrust/partition.h>
 #include <thrust/sequence.h>
+#include <thrust/system/tbb/execution_policy.h>
 #include <unordered_map>
 #include <vector>
 
@@ -573,6 +575,24 @@ void transform_point_cloud(const void *owner, const PointCloud &input_cloud,
   input_cloud.gather_attributes_into(output_cloud, kept_indices);
 
   output_cloud.resize(new_point_count);
+
+  const auto &point_scale = transform.point_scale.value();
+  if (point_scale.active) {
+    auto point_scales = output_cloud.get<float>(point_scale_attribute);
+    if (point_scales.empty()) {
+      const auto base =
+          default_point_scale_millimetres().load(std::memory_order_relaxed) *
+          point_scale.value;
+      point_scales = output_cloud.add<float>(point_scale_attribute);
+      thrust::fill(thrust::tbb::par, point_scales.begin(), point_scales.end(),
+                   base);
+    } else {
+      thrust::transform(
+          thrust::tbb::par, point_scales.begin(), point_scales.end(),
+          point_scales.begin(),
+          [gain = point_scale.value](float value) { return value * gain; });
+    }
+  }
 }
 
 } // namespace pc::backend::cuda
