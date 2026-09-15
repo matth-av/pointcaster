@@ -41,10 +41,11 @@ Item {
             visible: root.primaryColorMode !== 0
             geometry: primaryGeo
             materials: [
-                PointSolidMaterial {
+                PointCloudMaterial {
+                    fragmentShader: "qrc:/qt/qml/Pointcaster/PointCloud/Shaders/PointSolid.frag"
                     uPointSize: viewController.shaderPointSize
                     uViewportHeight: viewController.shaderViewportHeight
-                    uColor: root.primaryColorMode > 0 ? root.solidColors[root.primaryColorMode - 1] : "white"
+                    property color uColor: root.primaryColorMode > 0 ? root.solidColors[root.primaryColorMode - 1] : "white"
                 }
             ]
         }
@@ -77,10 +78,11 @@ Item {
                 visible: root.secondaryColorMode !== 0
                 geometry: secondaryGeo
                 materials: [
-                    PointSolidMaterial {
+                    PointCloudMaterial {
+                        fragmentShader: "qrc:/qt/qml/Pointcaster/PointCloud/Shaders/PointSolid.frag"
                         uPointSize: viewController.shaderPointSize
                         uViewportHeight: viewController.shaderViewportHeight
-                        uColor: root.secondaryColorMode > 0 ? root.solidColors[root.secondaryColorMode - 1] : "white"
+                        property color uColor: root.secondaryColorMode > 0 ? root.solidColors[root.secondaryColorMode - 1] : "white"
                     }
                 ]
             }

@@ -45,7 +45,6 @@ qt_add_qml_module(PointcasterQml
         Editors/OperatorPipelineEditor.qml
         PointCloud/PointCloudMaterial.qml
         PointCloud/PointIndexMaterial.qml
-        PointCloud/PointSolidMaterial.qml
         Windows/TabBar.qml
         Windows/TabBarBase.qml
         Windows/TabDropIndicator.qml
