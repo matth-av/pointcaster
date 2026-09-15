@@ -18,6 +18,7 @@
 {% macro toggleable_to_map(kind) %}
 {%- if kind == "toggleable_bounds" %}toggleableBoundsToMap
 {%- elif kind == "toggleable_int" %}toggleableIntToMap
+{%- elif kind == "toggleable_float" %}toggleableFloatToMap
 {%- else %}toggleableRadiusToMap
 {%- endif %}
 {%- endmacro %}
@@ -54,6 +55,8 @@
             return toggleableRadiusToMap({{ m.read }});
 {% elif m.kind == "toggleable_int" %}
             return toggleableIntToMap({{ m.read }});
+{% elif m.kind == "toggleable_float" %}
+            return toggleableFloatToMap({{ m.read }});
 {% elif m.kind == "stream" %}
             const auto stream = {{ m.read }};
             return QVariant(stream ? int(stream->size()) : -1);
@@ -106,6 +109,8 @@
             const auto newValue = toggleableRadiusLoose(value, {{ m.read }});
 {% elif m.kind == "toggleable_int" %}
             const auto newValue = toggleableIntLoose(value, {{ m.read }});
+{% elif m.kind == "toggleable_float" %}
+            const auto newValue = toggleableFloatLoose(value, {{ m.read }});
 {% elif m.kind == "position_bounds" %}
             const pc::position_bounds newValue = toPositionBoundsLoose(value);
 {% else %}
@@ -477,7 +482,8 @@ signals:
 {% set want_quaternion = "quaternion" in kinds %}
 {% set want_toggleable_radius = "toggleable_radius" in kinds %}
 {% set want_toggleable_int = "toggleable_int" in kinds %}
-{% if want_vector3d or want_quaternion or want_toggleable_radius or want_toggleable_int %}
+{% set want_toggleable_float = "toggleable_float" in kinds %}
+{% if want_vector3d or want_quaternion or want_toggleable_radius or want_toggleable_int or want_toggleable_float %}
 private:
 {% endif %}
 {% if want_vector3d %}
@@ -619,6 +625,32 @@ private:
             next.active = map.value(QStringLiteral("active")).toBool();
         if (map.contains(QStringLiteral("value")))
             next.value = map.value(QStringLiteral("value")).toInt();
+        return next;
+    }
+{% endif %}
+{% if want_toggleable_float %}
+    static QVariantMap toggleableFloatToMap(const pc::Toggleable<float> &t) {
+        QVariantMap map;
+        map.insert(QStringLiteral("active"), t.active);
+        map.insert(QStringLiteral("value"), t.value);
+        return map;
+    }
+
+    static pc::Toggleable<float>
+    toggleableFloatLoose(const QVariant &value, const pc::Toggleable<float> &current) {
+        auto next = current;
+        // as above: read the shape off what toMap() produced, not off the
+        // metatype that went in
+        const auto map = value.toMap();
+        if (map.isEmpty()) {
+            // a bare number is the value on its own, switch untouched
+            next.value = value.toFloat();
+            return next;
+        }
+        if (map.contains(QStringLiteral("active")))
+            next.active = map.value(QStringLiteral("active")).toBool();
+        if (map.contains(QStringLiteral("value")))
+            next.value = map.value(QStringLiteral("value")).toFloat();
         return next;
     }
 {% endif %}

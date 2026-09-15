@@ -95,7 +95,7 @@ class Member:
     def is_toggleable(self) -> bool:
         """True for the kinds carrying a switch alongside their value."""
         return self.kind in ("toggleable_bounds", "toggleable_radius",
-                             "toggleable_int")
+                             "toggleable_int", "toggleable_float")
 
 
 @dataclass
@@ -130,7 +130,8 @@ class GeneratorArgs:
 KINDS = (
     "nested", "variant", "enum", "string", "bool", "int", "float", "float3",
     "quaternion", "position", "position_bounds", "length", "radius",
-    "toggleable_bounds", "toggleable_radius", "toggleable_int", "stream",
+    "toggleable_bounds", "toggleable_radius", "toggleable_int",
+    "toggleable_float", "stream",
     "opaque",
 )
 
@@ -417,6 +418,8 @@ def classify(cpp_type: str, is_enum: bool, is_variant: bool) -> tuple[str, str]:
             return "toggleable_radius", "QVariantMap"
         if inner in ("int", "unsigned") or INTLIKE_RE.fullmatch(inner):
             return "toggleable_int", "QVariantMap"
+        if inner in ("float", "double"):
+            return "toggleable_float", "QVariantMap"
         return "opaque", ""
     if cpp_type in ("std::string", "QString"):
         return "string", "QString"
