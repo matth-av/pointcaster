@@ -20,7 +20,8 @@ public class PointreceiverMeshHost : MonoBehaviour
     public enum PointSizeMode { WorldUnits, ScreenPixels }
 
     [Header("Points")]
-    [Tooltip("Size in metres when Size Mode is World Units, otherwise pixels.")]
+    [Tooltip("Size in metres when Size Mode is World Units, otherwise pixels. "
+        + "Multiplies each point's point_scale radius in millimetres when the cloud has one.")]
     [Min(0f)] public float PointSize = 0.01f;
 
     public PointSizeMode SizeMode = PointSizeMode.WorldUnits;
@@ -51,6 +52,10 @@ public class PointreceiverMeshHost : MonoBehaviour
     private const float MillimetresToMetres = 0.001f;
     private const float PositionScale = short.MaxValue * MillimetresToMetres;
 
+    private const float PointScaleStepsPerMillimetre = 10f;
+    private const float PointScaleRange = short.MaxValue / PointScaleStepsPerMillimetre;
+    private const short NoPointScale = -short.MaxValue;
+
     [StructLayout(LayoutKind.Sequential)]
     private struct PackedPosition
     {
@@ -61,7 +66,7 @@ public class PointreceiverMeshHost : MonoBehaviour
     private struct PointVertex
     {
         public short X, Y, Z;
-        public short _Padding;
+        public short Scale;
         public Color32 Color;
     }
 
@@ -70,6 +75,7 @@ public class PointreceiverMeshHost : MonoBehaviour
     private NativeArray<PointVertex> OutputVertices;
     private NativeArray<Vector2> QuadCorners;
     private NativeArray<Vector3> MinMax;
+    private NativeArray<float> MaxPointScale;
 
     private const string PointShaderResource = "PointQuad";
 
@@ -127,6 +133,7 @@ public class PointreceiverMeshHost : MonoBehaviour
         if (OutputVertices.IsCreated) OutputVertices.Dispose();
         if (QuadCorners.IsCreated) QuadCorners.Dispose();
         if (MinMax.IsCreated) MinMax.Dispose();
+        if (MaxPointScale.IsCreated) MaxPointScale.Dispose();
 
         Pointreceiver?.Dispose();
         Pointreceiver = null;
@@ -187,6 +194,7 @@ public class PointreceiverMeshHost : MonoBehaviour
 
         PointMaterial.SetFloat("_PointSize", PointSize);
         PointMaterial.SetFloat("_PositionScale", PositionScale);
+        PointMaterial.SetFloat("_PointScaleRange", PointScaleRange);
         PointMaterial.SetColor("_Tint", Tint);
 
         SetToggle("_Distance", "_DISTANCE_ON", SizeMode == PointSizeMode.WorldUnits);
@@ -245,6 +253,10 @@ public class PointreceiverMeshHost : MonoBehaviour
         {
             MinMax = new NativeArray<Vector3>(2, Allocator.Persistent);
         }
+        if (!MaxPointScale.IsCreated)
+        {
+            MaxPointScale = new NativeArray<float>(1, Allocator.Persistent);
+        }
 
         foreach (var channel in PointCloudChannels) 
         {
@@ -263,17 +275,33 @@ public class PointreceiverMeshHost : MonoBehaviour
             Colors = (uint*)frame.colours.ToPointer(),
             OutVertex = OutputVertices
         };
+
+        var pointScaleAttribute = PointreceiverNative.FindAttribute(ref frame, "point_scale");
+        if (pointScaleAttribute != IntPtr.Zero)
+        {
+            var attribute = *(PointreceiverAttribute*)pointScaleAttribute.ToPointer();
+            if (attribute.component_count == 1)
+            {
+                unpackJob.PointScales = attribute.data.ToPointer();
+                unpackJob.PointScaleCount = attribute.ElementCount;
+                unpackJob.PointScaleType = attribute.element_type;
+                unpackJob.PointScaleStep = attribute.quantisation_step;
+                unpackJob.PointScaleOffset = attribute.quantisation_offset;
+            }
+        }
+
         var boundsJob = new PointBoundsJob
         {
             Vertex = OutputVertices,
             Count = pointCount,
-            MinMax = MinMax
+            MinMax = MinMax,
+            MaxPointScale = MaxPointScale
         };
         var handle = boundsJob.Schedule(unpackJob.Schedule(pointCount, 64));
         handle.Complete();
 
         // quads grow around the centrepoint
-        var extent = MinMax[1] - MinMax[0] + Vector3.one * PointSize;
+        var extent = MinMax[1] - MinMax[0] + Vector3.one * PointSize * Mathf.Max(1f, MaxPointScale[0]);
         var bounds = new Bounds((MinMax[0] + MinMax[1]) * 0.5f, extent);
 
         ApplyMeshData(targetMesh, pointCount, bounds);
@@ -369,6 +397,12 @@ public class PointreceiverMeshHost : MonoBehaviour
         // one point fills the four vertices of its quad
         [NativeDisableParallelForRestriction] public NativeArray<PointVertex> OutVertex;
 
+        [NativeDisableUnsafePtrRestriction] public void* PointScales;
+        public int PointScaleCount;
+        public PointreceiverAttributeType PointScaleType;
+        public float PointScaleStep;
+        public float PointScaleOffset;
+
         public void Execute(int i)
         {
             var packed = Positions[i];
@@ -378,6 +412,7 @@ public class PointreceiverMeshHost : MonoBehaviour
                 X = (short)-Mathf.Max(packed.X, short.MinValue + 1),
                 Y = packed.Y,
                 Z = packed.Z,
+                Scale = PackPointScale(i),
                 Color = *(Color32*)(Colors + i)
             };
 
@@ -386,6 +421,28 @@ public class PointreceiverMeshHost : MonoBehaviour
             {
                 OutVertex[vertex + corner] = outVertex;
             }
+        }
+
+        short PackPointScale(int i)
+        {
+            if (PointScales == null || i >= PointScaleCount) return NoPointScale;
+
+            float rawScale;
+            switch (PointScaleType)
+            {
+                case PointreceiverAttributeType.Float32: rawScale = ((float*)PointScales)[i]; break;
+                case PointreceiverAttributeType.UInt8: rawScale = ((byte*)PointScales)[i]; break;
+                case PointreceiverAttributeType.UInt16: rawScale = ((ushort*)PointScales)[i]; break;
+                case PointreceiverAttributeType.UInt32: rawScale = ((uint*)PointScales)[i]; break;
+                case PointreceiverAttributeType.Int8: rawScale = ((sbyte*)PointScales)[i]; break;
+                case PointreceiverAttributeType.Int16: rawScale = ((short*)PointScales)[i]; break;
+                case PointreceiverAttributeType.Int32: rawScale = ((int*)PointScales)[i]; break;
+                default: return NoPointScale;
+            }
+
+            float scaleMillimetres = rawScale * PointScaleStep + PointScaleOffset;
+            float scaleSteps = scaleMillimetres * PointScaleStepsPerMillimetre + 0.5f;
+            return (short)Mathf.Clamp(scaleSteps, 0f, short.MaxValue);
         }
     }
 
@@ -396,11 +453,13 @@ public class PointreceiverMeshHost : MonoBehaviour
         public int Count;
 
         [WriteOnly] public NativeArray<Vector3> MinMax;
+        [WriteOnly] public NativeArray<float> MaxPointScale;
 
         public void Execute()
         {
             var min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
             var max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+            int maxScale = NoPointScale;
 
             for (int i = 0; i < Count; i++)
             {
@@ -415,10 +474,12 @@ public class PointreceiverMeshHost : MonoBehaviour
                 max.x = Mathf.Max(max.x, p.x);
                 max.y = Mathf.Max(max.y, p.y);
                 max.z = Mathf.Max(max.z, p.z);
+                maxScale = Mathf.Max(maxScale, v.Scale);
             }
 
             MinMax[0] = min;
             MinMax[1] = max;
+            MaxPointScale[0] = maxScale / PointScaleStepsPerMillimetre;
         }
     }
 }
