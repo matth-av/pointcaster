@@ -52,7 +52,7 @@ Item {
 
         PointCloudGeometry {
             id: primaryGeo
-            pointCloudAdapter: root.primaryAdapter ? root.primaryAdapter.pointCloudAdapter() : null
+            pointCloudAdapter: root.primaryAdapter
         }
 
         // secondary cloud is wrapped in a node that controls its transformation based on the result of the alignment controller
@@ -90,7 +90,7 @@ Item {
 
         PointCloudGeometry {
             id: secondaryGeo
-            pointCloudAdapter: root.secondaryAdapter ? root.secondaryAdapter.pointCloudAdapter() : null
+            pointCloudAdapter: root.secondaryAdapter
         }
 
         Node {

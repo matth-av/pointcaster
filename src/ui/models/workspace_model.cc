@@ -830,6 +830,31 @@ void WorkspaceModel::applyWorkspaceConfigAndRebuild(
     }
   }
   _workspace.apply_new_config(std::move(new_config), sync_devices);
+
+  if (sync_devices) {
+    // first look at the live plugins and invalidate adapters for any that
+    // aren't loaded / have been deleted
+    std::unordered_set<const void *> live_plugins;
+    live_plugins.reserve(_workspace.devices.size());
+    for (auto &device_plugin : _workspace.devices) {
+      if (device_plugin) live_plugins.insert(device_plugin.get());
+    }
+    for (QObject *obj : _deviceAdapters) {
+      auto *a = qobject_cast<DeviceAdapter *>(obj);
+      if (!a || !a->plugin()) continue;
+      if (!live_plugins.contains(a->plugin())) a->invalidatePlugin();
+    }
+  }
+
+  // then invalidate adapters for any sessions that have been deleted, since a
+  // queued point cloud update can still reach one before it is deleted
+  for (const auto &[id, adapter] :
+       std::as_const(_sessionPointCloudAdapters).asKeyValueRange()) {
+    if (adapter && !_workspace.sessions.contains(id.toStdString())) {
+      adapter->invalidateSession();
+    }
+  }
+
   switch (scope) {
   case RebuildScope::None: {
     break;
@@ -912,7 +937,7 @@ void WorkspaceModel::loadFromFile(const QUrl &file) {
 
   const bool load_malformed =
       AppSettings::instance()->loadMalformedWorkspaces();
-  std::jthread([&, local_path, load_malformed]() mutable {
+  std::jthread([this, file, local_path, load_malformed]() mutable {
     pc::WorkspaceConfiguration loaded_config;
     pc::load_workspace_from_file(loaded_config, local_path.toStdString(),
                                  load_malformed);
@@ -3286,18 +3311,6 @@ void WorkspaceModel::syncSessionAdapters() {
 void WorkspaceModel::syncDeviceAdapters() {
   pc::logger()->trace("syncDeviceAdapters: begin, workspace device count={}",
                       _workspace.devices.size());
-
-  std::unordered_set<const void *> live_plugins;
-  live_plugins.reserve(_workspace.devices.size());
-  for (auto &device_plugin : _workspace.devices) {
-    if (device_plugin) live_plugins.insert(device_plugin.get());
-  }
-  for (QObject *obj : _deviceAdapters) {
-    auto *a = qobject_cast<DeviceAdapter *>(obj);
-    if (!a || !a->plugin()) continue;
-    // invalidate device plugins that have been removed
-    if (!live_plugins.contains(a->plugin())) a->invalidatePlugin();
-  }
 
   QHash<QString, DeviceAdapter *> existing_by_id;
   existing_by_id.reserve(_deviceAdapters.size());

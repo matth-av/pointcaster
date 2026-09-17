@@ -999,11 +999,12 @@ Column {
             id: boolCheckBox
             enabled: root.configAdapter ? !root.configAdapter.isDisabled(path) : true
             checked: root.configAdapter ? !!root.configAdapter.value(path) : false
-            onCheckedChanged: function () {
+            onToggled: {
                 root.configAdapter.set(path, checked);
                 // if its a button, we only want it to be momentarily checked
                 if (root.configAdapter.isButton(path)) {
                     boolCheckBox.checked = false;
+                    root.configAdapter.set(path, false);
                 }
             }
             Connections {

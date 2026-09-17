@@ -42,9 +42,8 @@ public:
   Q_INVOKABLE std::shared_ptr<std::vector<std::byte>> render_data() override {
     return _session ? _session->render_data() : nullptr;
   }
-  Q_INVOKABLE PointCloudAdapter *pointCloudAdapter() {
-    return static_cast<PointCloudAdapter *>(this);
-  }
+
+  void invalidateSession() { _session = nullptr; }
 
   // ---- camera frame slots / URLs ----
   QStringList frameSlots() const { return _frameSlotNames; }

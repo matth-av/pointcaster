@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <QPointer>
 #include <QQuick3DGeometry>
 #include <QVector3D>
 #include <QtQmlIntegration/qqmlintegration.h>
@@ -15,7 +16,7 @@ class PointCloudGeometry : public QQuick3DGeometry {
 
   QML_NAMED_ELEMENT(PointCloudGeometry)
 
-  Q_PROPERTY(PointCloudAdapter *pointCloudAdapter READ pointCloudAdapter WRITE
+  Q_PROPERTY(QObject *pointCloudAdapter READ pointCloudAdapter WRITE
                  setPointCloudAdapter NOTIFY pointCloudAdapterChanged)
 
   Q_PROPERTY(bool enabled READ enabled WRITE setEnabled NOTIFY enabledChanged)
@@ -29,8 +30,8 @@ class PointCloudGeometry : public QQuick3DGeometry {
 public:
   PointCloudGeometry();
 
-  PointCloudAdapter *pointCloudAdapter() const { return _pointCloudAdapter; }
-  void setPointCloudAdapter(PointCloudAdapter *adapter);
+  QObject *pointCloudAdapter() const { return _pointCloudAdapter; }
+  void setPointCloudAdapter(QObject *adapter);
 
   bool enabled() const { return _enabled; }
   void setEnabled(bool enabled); 
@@ -58,7 +59,7 @@ signals:
   void boundsChanged();
 
 private:
-  PointCloudAdapter *_pointCloudAdapter = nullptr;
+  QPointer<QObject> _pointCloudAdapter;
   bool _enabled = true;
 
   QByteArray _vertexBuffer;

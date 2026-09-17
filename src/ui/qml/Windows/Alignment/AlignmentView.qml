@@ -61,7 +61,7 @@ Item {
         Model {
             geometry: PointCloudGeometry {
                 id: geo
-                pointCloudAdapter: root.deviceAdapter ? root.deviceAdapter.pointCloudAdapter() : null
+                pointCloudAdapter: root.deviceAdapter
             }
             materials: [
                 PointCloudMaterial {

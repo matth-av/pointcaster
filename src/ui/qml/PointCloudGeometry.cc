@@ -7,7 +7,7 @@ PointCloudGeometry::PointCloudGeometry() : QQuick3DGeometry() {
   update();
 }
 
-void PointCloudGeometry::setPointCloudAdapter(PointCloudAdapter *adapter) {
+void PointCloudGeometry::setPointCloudAdapter(QObject *adapter) {
   if (_pointCloudAdapter == adapter) return;
   _pointCloudAdapter = adapter;
   emit pointCloudAdapterChanged();
@@ -22,12 +22,13 @@ void PointCloudGeometry::setEnabled(bool enabled) {
 }
 
 void PointCloudGeometry::updateGeometry() {
-  if (!_enabled || !_pointCloudAdapter) {
+  auto *adapter = dynamic_cast<PointCloudAdapter *>(_pointCloudAdapter.data());
+  if (!_enabled || !adapter) {
     return;
   }
 
-  auto cloud = _pointCloudAdapter->point_cloud();
-  auto render_buffer = _pointCloudAdapter->render_data();
+  auto cloud = adapter->point_cloud();
+  auto render_buffer = adapter->render_data();
 
   if (!cloud || cloud->empty() || !render_buffer || render_buffer->empty()) {
     reset();

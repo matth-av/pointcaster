@@ -471,7 +471,7 @@ Item {
             Model {
                 geometry: PointCloudGeometry {
                     id: sessionGeo
-                    pointCloudAdapter: sessionCloudNode.adapter ? sessionCloudNode.adapter.pointCloudAdapter() : null
+                    pointCloudAdapter: sessionCloudNode.adapter
                     enabled: sessionCloudNode.adapter !== null
                 }
                 materials: [

@@ -152,6 +152,7 @@ public:
     for (auto *op : _operatorAdapters) {
       if (op) op->invalidatePlugin();
     }
+    refreshAttributeList();
   }
 
   bool pluginNullState() const {
@@ -197,10 +198,6 @@ public:
   Q_INVOKABLE std::shared_ptr<std::vector<std::byte>> render_data() override {
     if (!_plugin) return {};
     return _plugin->render_data();
-  }
-
-  Q_INVOKABLE PointCloudAdapter *pointCloudAdapter() {
-    return static_cast<PointCloudAdapter *>(this);
   }
 
   void notifyFieldChanged(const QString &path) override {
