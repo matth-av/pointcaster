@@ -14,7 +14,6 @@ variables:
   # force powershell to fail when a single command fails
   - &strict_mode $ErrorActionPreference = 'Stop'; $PSNativeCommandUseErrorActionPreference = $true
   - &container_env
-    DOCKER_HOST: npipe:////./pipe/dockerDesktopWindowsEngine
     POINTCASTER_BUILD_VOLUME: pointcaster-ci-build
     # set the username and password for cr.pointcaster.net here
     REGISTRY_USER:
@@ -37,6 +36,9 @@ steps:
       - docker pull cr.pointcaster.net/pointcaster-dev:latest
       # reap orphaned containers from prior builds first
       - docker ps -aq --filter volume=$env:POINTCASTER_BUILD_VOLUME | ForEach-Object { docker rm --force $_ }
+      # clear ACLs for any build volumes created on previous runs
+      - docker run --rm --isolation=process --entrypoint powershell -v "$($env:POINTCASTER_BUILD_VOLUME):C:\vol" cr.pointcaster.net/pointcaster-dev:latest -NoProfile -Command 'icacls C:\vol /reset /T /C /Q > $null; exit 0'
+      # and clear the volume itself
       - docker volume rm --force $env:POINTCASTER_BUILD_VOLUME
 
   - name: configure
