@@ -18,6 +18,7 @@ class Attribute(ctypes.Structure):
                 ("data", ctypes.c_void_p),
                 ("element_count", ctypes.c_size_t),
                 ("quantisation_step", ctypes.c_float),
+                ("quantisation_offset", ctypes.c_float),
                 ("component_count", ctypes.c_uint32),
                 ("stride", ctypes.c_uint32),
                 ("element_type", ctypes.c_int)]
@@ -130,28 +131,65 @@ value_types = ["float", "int", "string", "bool", "bounds",
                "points", "voxels", "aabbs", "contours", "unknown"]
 
 # indexed by pointreceiver_attribute_type
-attribute_type_names = ["float32", "uint8", "uint16", "uint32", "int16", "int32"]
+attribute_type_names = ["float32", "uint8", "uint16", "uint32", "int16",
+                        "int32", "int8"]
 
 
-def describe_attribute(attribute, preview_count=3):
-    name = attribute.name.decode(errors="replace")
-    if attribute.element_type >= len(attribute_type_names):
-        return f"{name}: unknown element type {attribute.element_type}"
+# the name pointcaster gives a per point radius, in the millimetre space the
+# positions use
+point_scale_attribute = "point_scale"
 
+# sources already reported as carrying a point scale
+scale_sources = set()
+
+
+def read_attribute(attribute):
     # the library converts out of whatever it was stored as, so nothing here
     # needs to know about the storage type or its quantisation step
     value_count = attribute.element_count * attribute.component_count
     values = (ctypes.c_float * value_count)()
     if lib.pointreceiver_attribute_copy_floats(
             ctypes.byref(attribute), values, value_count) != status_ok:
+        return None
+    return values
+
+
+def describe_attribute(attribute, values, preview_count=3):
+    name = attribute.name.decode(errors="replace")
+    if attribute.element_type >= len(attribute_type_names):
+        return f"{name}: unknown element type {attribute.element_type}"
+
+    if values is None:
         return f"{name}: values could not be read"
 
+    value_count = len(values)
     shown = min(preview_count, value_count)
     preview = ", ".join(f"{values[i]:.4g}" for i in range(shown))
     ellipsis = ", ..." if value_count > shown else ""
+
+    # a quantised attribute says how its raw elements map back, so the type
+    # and the step can be read off together
+    encoding = ""
+    if attribute.quantisation_step != 1.0 or attribute.quantisation_offset != 0.0:
+        bytes_per_point = attribute.stride
+        encoding = (f" step {attribute.quantisation_step:.6g}"
+                    f" offset {attribute.quantisation_offset:.6g}"
+                    f" ({bytes_per_point} B/point)")
+
     return (f"{name}: {attribute.element_count} x "
-            f"{attribute_type_names[attribute.element_type]} "
+            f"{attribute_type_names[attribute.element_type]}{encoding} "
             f"[{preview}{ellipsis}]")
+
+
+def report_point_scale(source, values):
+    """Log the range of scales, and the source the first time it sends one."""
+    if values is None or len(values) == 0:
+        return
+    if source not in scale_sources:
+        scale_sources.add(source)
+        print(f"  point scale on '{source}' "
+              f"(subscribed to {topic or 'all topics'} on {endpoint})")
+    print(f"  point scale {min(values):.4g} - {max(values):.4g} mm")
 
 address = ctypes.create_string_buffer(256)
 try:
@@ -171,7 +209,12 @@ try:
         else:
             print(f"{payload.point_count} points from '{source}'")
             for i in range(payload.attribute_count):
-                print(f"    {describe_attribute(payload.attributes[i])}")
+                attribute = payload.attributes[i]
+                values = read_attribute(attribute)
+                print(f"    {describe_attribute(attribute, values)}")
+                if attribute.name.decode(
+                        errors="replace") == point_scale_attribute:
+                    report_point_scale(source, values)
 except KeyboardInterrupt:
     print()
 

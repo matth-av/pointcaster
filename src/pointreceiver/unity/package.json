@@ -1,6 +1,6 @@
 {
     "name": "net.pointcaster.pointreceiver",
-    "version": "1.0.10",
+    "version": "1.0.11",
     "displayName": "Pointcaster Unity Integration",
     "description": "Unity integration for Pointcaster. This package includes integration scripts and resources, as well as the native pointreceiver library and its dependencies for multiple platforms.",
     "unity": "2021.3",
