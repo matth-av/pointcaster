@@ -105,7 +105,7 @@ void DevicePlugin::update_config(const DeviceConfigurationVariant &config) {
 void DevicePlugin::on_config_field_changed(std::string_view path) {
   // For operator changes, forward the new config to all pipeline worker
   // instances
-  if (path.find("operator") != std::string_view::npos) {
+  if (path.contains("operator")) {
     std::visit(
         [this](const auto &device_config) {
           if constexpr (requires { device_config.operators; }) {

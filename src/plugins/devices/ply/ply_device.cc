@@ -198,7 +198,7 @@ void PlyDevice::on_config_field_changed(std::string_view path) {
   auto &config = std::get<PlyDeviceConfiguration>(_config);
 
   // file path changed... reload
-  if (path.find("file") != std::string_view::npos) {
+  if (path.contains("file")) {
     auto file_config = config.file.value();
     if (file_config.path != _loaded_file_path) {
       lock.unlock();
@@ -212,7 +212,7 @@ void PlyDevice::on_config_field_changed(std::string_view path) {
     }
   }
 
-  if (path.find("position_units") != std::string_view::npos) {
+  if (path.contains("position_units")) {
     if (_sequence_loader) {
       _sequence_loader->set_position_units(config.position_units.value());
       reload_current_frame();
@@ -225,9 +225,8 @@ void PlyDevice::on_config_field_changed(std::string_view path) {
   }
 
   // sequence config changes
-  if (_sequence_loader && path.find("sequence") != std::string_view::npos) {
-    if (path.find("buffer_capacity") != std::string_view::npos ||
-        path.find("prefetch_ahead") != std::string_view::npos) {
+  if (_sequence_loader && path.contains("sequence")) {
+    if (path.contains("buffer_capacity") || path.contains("prefetch_ahead")) {
       const auto loader_config = sequence_loader_config(config);
       _sequence_loader->set_capacity(loader_config.buffer_capacity,
                                      loader_config.prefetch_ahead);
@@ -235,7 +234,7 @@ void PlyDevice::on_config_field_changed(std::string_view path) {
     }
 
     // scrub...
-    if (path.find("current_frame") != std::string_view::npos) {
+    if (path.contains("current_frame")) {
       auto &sequence_config = config.sequence.value();
       const auto total = static_cast<int>(_sequence_loader->frame_count());
       const auto start =
@@ -259,9 +258,8 @@ void PlyDevice::on_config_field_changed(std::string_view path) {
   }
 
   // transform / color / operator changes... trigger re-transform current frame
-  if (path.empty() || path.find("transform") != std::string_view::npos ||
-      path.find("color") != std::string_view::npos ||
-      path.find("operator") != std::string_view::npos) {
+  if (path.empty() || path.contains("transform") || path.contains("color") ||
+      path.contains("operator")) {
     apply_transform();
   }
 }
