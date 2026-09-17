@@ -7,6 +7,8 @@ add_library(pointcaster_ui
     models/settings_page_registry.cc
     models/stream_channel_model.h
     models/stream_channel_model.cc
+    models/attribute_list_model.h
+    models/attribute_list_model.cc
     models/log_model.h
     models/log_model.cc
     models/commands/device_config_commands.cc

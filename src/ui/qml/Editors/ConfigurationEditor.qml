@@ -30,9 +30,53 @@ Column {
 
     spacing: groupSpacing
 
+    // element types that draw their own rows, stored in configs as lists
+    readonly property var listElementEditors: ({
+            "AttributeConfiguration": attributeNode
+        })
+
     Repeater {
         model: configAdapter ? configAdapter.childPathGroups : []
-        delegate: configurationNode
+
+        delegate: Loader {
+            id: groupLoader
+
+            required property var modelData
+            readonly property var groupPaths: groupLoader.modelData
+
+            width: root.width
+            // an empty group takes no room or spacing in the column. this reads
+            // what the group holds rather than its visible, which turns false
+            // along with the loader's and would never let it back
+            visible: groupLoader.item ? groupLoader.item.hasContent : false
+
+            sourceComponent: {
+                // the source component is generally gonna be a configurationNode,
+                // but it can also be a list of something too
+                const listNode = root.listElementEditors[root.configAdapter.listElementType(groupPaths[0])];
+                return listNode || configurationNode;
+            }
+        }
+    }
+
+    Component {
+        id: attributeNode
+
+        AttributeEditor {
+            width: root.width
+
+            path: groupPaths[0]
+            configPath: root.configPath
+
+            configAdapter: root.configAdapter
+            workspace: root.workspace
+
+            flattened: root.flattenFields
+
+            minLabelColumnWidth: root.minLabelColumnWidth
+            fieldIndent: root.fieldIndent
+            groupInnerPaddingY: root.groupInnerPaddingY
+        }
     }
 
     Component {
@@ -41,7 +85,7 @@ Column {
         Rectangle {
             id: nodeRoot
 
-            readonly property string defaultPath: modelData[0]
+            readonly property string defaultPath: groupPaths[0]
 
             readonly property bool nested: defaultPath.includes("/")
             readonly property string parentConfigName: root.configAdapter.parentConfigurationName(defaultPath)
@@ -74,7 +118,7 @@ Column {
             function visibleFieldPaths() {
                 if (!root.configAdapter)
                     return [];
-                return modelData.filter(function (path) {
+                return groupPaths.filter(function (path) {
                     const hidden = root.configAdapter.isHidden(path);
                     // for now just hide variant type selection
                     const variant = root.configAdapter.isVariant(path);
@@ -89,7 +133,8 @@ Column {
                 }
             }
 
-            visible: fieldRepeater.count > 0
+            readonly property bool hasContent: fieldRepeater.count > 0
+            visible: hasContent
 
             color: flattened ? "transparent" : ThemeColors.dark
             border.width: (!flattened && expanded) ? Math.max(1, Math.round(1 * Scaling.uiScale)) : 0

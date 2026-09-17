@@ -1,5 +1,6 @@
 #pragma once
 
+#include "attribute_list_model.h"
 #include "camera_image_provider.h"
 #include "config_adapter.h"
 #include "enum_adapters.h"
@@ -37,11 +38,18 @@ class DeviceAdapter : public ConfigAdapter, public PointCloudAdapter {
   Q_PROPERTY(
       bool pluginNullState READ pluginNullState NOTIFY pluginNullStateChanged)
 
+  // empty for a device whose source declares no per-point attributes
+  Q_PROPERTY(QAbstractListModel *attributeList READ attributeList CONSTANT)
+
 public:
   explicit DeviceAdapter(pc::devices::DevicePlugin *plugin,
                          CameraImageProvider *imageProvider,
                          QObject *parent = nullptr)
-      : ConfigAdapter(parent), _plugin(plugin), _imageProvider(imageProvider) {}
+      : ConfigAdapter(parent), _plugin(plugin), _imageProvider(imageProvider) {
+    // a device that loaded before its adapter existed already has attributes
+    // to describe
+    refreshAttributeList();
+  }
 
   ~DeviceAdapter() override {
     if (_imageProvider) _imageProvider->removeFrames(deviceKeyPrefix());
@@ -56,6 +64,10 @@ public:
   QList<OperatorAdapter *> operatorAdapters() const {
     return _operatorAdapters;
   }
+
+  QAbstractListModel *attributeList() { return &_attributeList; }
+
+  void refreshAttributeList() { _attributeList.bind(this, _plugin); }
 
   void rebuildOperatorAdapters() {
     qDeleteAll(_operatorAdapters);
@@ -156,6 +168,8 @@ public:
     const auto q = pc::ui::toQt(s);
     if (q == _status) return;
     _status = q;
+    // a device that just finished loading has attributes to describe now
+    refreshAttributeList();
     emit statusChanged();
   }
 
@@ -191,8 +205,13 @@ public:
 
   void notifyFieldChanged(const QString &path) override {
     emit fieldChanged(path);
-    if (isRefreshingAllFields()) return;
-    if (_plugin) _plugin->on_config_field_changed(path.toStdString());
+    if (_plugin && !isRefreshingAllFields()) {
+      _plugin->on_config_field_changed(path.toStdString());
+    }
+    if (path.contains(QStringLiteral("file")) ||
+        path.contains(QStringLiteral("attributes"))) {
+      refreshAttributeList();
+    }
   }
 
   void notifyPointCloudUpdated() {
@@ -265,6 +284,8 @@ protected:
   QString _deviceId;
 
   QList<OperatorAdapter *> _operatorAdapters;
+
+  pc::ui::AttributeListModel _attributeList{this};
 
   QStringList _frameSlotNames;
   QVariantMap _frameUrls;
