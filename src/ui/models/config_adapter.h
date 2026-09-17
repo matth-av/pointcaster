@@ -123,6 +123,12 @@ public:
     return false;
   }
 
+  // the element type of a std::vector<T> member
+  Q_INVOKABLE virtual QString listElementType(const QString &path) const {
+    Q_UNUSED(path);
+    return {};
+  }
+
   Q_INVOKABLE virtual bool isEnum(const QString &path) const {
     Q_UNUSED(path);
     return false;

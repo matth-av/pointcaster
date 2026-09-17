@@ -847,6 +847,22 @@ public:
         return false;
     }
 
+{% if s.any_lists %}
+    // a std::vector of structs names its element type here, so the editor can
+    // pick a delegate for the rows without knowing the owning config
+    Q_INVOKABLE QString listElementType(const QString &path) const override {
+{% for m in s.members %}
+{% if m.list_element_type %}
+        if (path == QStringLiteral("{{ m.path }}"))
+            return QStringLiteral("{{ m.list_element_type }}");
+{% elif m.kind == "nested" %}
+{{ forward_case(m, "listElementType", "") }}
+{% endif %}
+{% endfor %}
+        return {};
+    }
+
+{% endif %}
 {% if s.any_enums %}
     Q_INVOKABLE bool isEnum(const QString &path) const override {
 {% for m in s.members %}

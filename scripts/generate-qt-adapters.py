@@ -63,6 +63,9 @@ class Member:
     stream_label: str = ""
     # nested config members embed an adapter of this type
     adapter_type: str = ""
+    # for a std::vector of structs: this is the element type,
+    # so the editor can pick a delegate for it
+    list_element_type: str = ""
     # the initialiser verbatim to use as a default value when its type isn't specialised
     default_expr: str = ""
     # variant members
@@ -386,6 +389,22 @@ def _is_nested_config_type(type_name: str) -> bool:
     if is_float3_type(t) or is_quaternion_type(t) or is_simple_comparable_type(t):
         return False
     return True
+
+
+VECTOR_RE = re.compile(r"^std::vector\s*<(.+)>$")
+
+
+def list_element_type(type_name: str) -> str:
+    """The element type of a std::vector of structs, or "" for anything else."""
+    match = VECTOR_RE.match(_effective_type(type_name).strip())
+    if not match:
+        return ""
+    element = match.group(1).strip()
+    # a vector of numbers or strings is not a list of editable rows
+    if element in ("bool", "int", "unsigned", "float", "double", "std::string",
+                   "std::byte", "QString") or INTLIKE_RE.fullmatch(element):
+        return ""
+    return element
 
 
 def classify(cpp_type: str, is_enum: bool, is_variant: bool) -> tuple[str, str]:
@@ -795,6 +814,7 @@ def _parse_members(
             comparable=is_simple_comparable_type(cpp_type),
             stream_label=stream_type_label(cpp_type) if kind == "stream" else "",
             adapter_type=f"{cpp_type}Adapter" if kind == "nested" else "",
+            list_element_type=list_element_type(cpp_type),
             alternative=alternative,
         )
         members.append(member)
@@ -919,13 +939,22 @@ def build_groups(
     paths: list[str],
     struct_members_map: dict[str, list[Member]] | None = None,
 ) -> tuple[list[Group], dict[str, str], list[str]]:
-    top_level = [p for p in paths if "/" not in p]
+    # a list of structs is a group of its own, so it is left out of the
+    # struct's scalars and appears where it was declared instead
+    list_paths = {m.path for m in members if m.list_element_type}
+    top_level = [p for p in paths if "/" not in p and p not in list_paths]
     groups: list[Group] = [Group(label=f"{struct_label} Properties", paths=top_level)]
     parent_names = {path: f"{struct_label} Properties" for path in top_level}
     folded_paths: list[str] = []
 
     for member in members:
-        if member.kind == "nested":
+        if member.list_element_type:
+            label = title_case(member.name)
+            groups.append(Group(label=label, paths=[member.path]))
+            parent_names[member.path] = label
+            if member.folded:
+                folded_paths.append(member.path)
+        elif member.kind == "nested":
             prefix = f"{member.name}/"
             nested_paths = [p for p in paths if p.startswith(prefix)]
             # a variant inside the nested configuration still wants a group per
@@ -1053,6 +1082,9 @@ def process_cpp_header(
                 "any_enums": any(
                     m.kind in ("enum", "variant", "nested") or m.options
                     for m in members
+                ),
+                "any_lists": any(
+                    m.list_element_type or m.kind == "nested" for m in members
                 ),
                 "nested_adapter_includes": nested_adapter_includes,
                 "paths": paths,
