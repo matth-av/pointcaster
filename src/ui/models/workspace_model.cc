@@ -2469,14 +2469,19 @@ void WorkspaceModel::refreshOperatorConfigAdapters() {
       if (!plugin) continue;
       const std::string operator_id = operator_id_of(plugin);
       if (operator_id.empty()) continue;
-      std::scoped_lock lock(_workspace.config_access);
-      if (auto *storage = find_device_operator_config(_workspace.config,
-                                                      device_id, operator_id)) {
-        plugin->update_config(*storage);
-        if (auto *host = opAdapter->host()) {
-          host->update_operator_in_pipeline(*storage, "");
-          host->reprocess();
-        }
+
+      pc::operators::OperatorConfigurationVariant config;
+      {
+        std::scoped_lock lock(_workspace.config_access);
+        auto *storage = find_device_operator_config(_workspace.config,
+                                                    device_id, operator_id);
+        if (!storage) continue;
+        config = *storage;
+      }
+      plugin->update_config(config);
+      if (auto *host = opAdapter->host()) {
+        host->update_operator_in_pipeline(config, "");
+        host->reprocess();
       }
     }
     attachOperatorConfigAdapters(deviceAdapter);
