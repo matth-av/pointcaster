@@ -1,6 +1,6 @@
 {
 	"name": "pointcaster",
-	"version-string": "0.2.14",
+	"version-string": "0.2.15",
 	"builtin-baseline": "4cf671c303551b27c6360c7c6e1ced5ec46d7258",
 	"dependencies": [
 		"bshoshany-thread-pool",
