@@ -111,7 +111,7 @@ bool rebuild_attribute(PointCloud &cloud, const AttributeStream &attribute,
 
 std::vector<std::byte> encode_meshopt(const PointCloud &cloud,
                                       const MeshoptOptions &options) {
-  const int level = options.level.value();
+  const int level = options.level;
 
   Payload payload;
   payload.positions = encode_stream(cloud.positions.data(), cloud.size(),

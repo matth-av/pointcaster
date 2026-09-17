@@ -1,7 +1,6 @@
 #pragma once
 
 #include <pointcaster/core_types.h>
-#include <rfl/DefaultVal.hpp>
 #include <string>
 
 namespace pc {
@@ -9,21 +8,20 @@ namespace pc {
 struct CameraConfiguration {
   std::string id; // @hidden
 
-  rfl::DefaultVal<bool> locked = false; // @hidden
-  rfl::DefaultVal<bool> orthographic = false; // @hidden
-  rfl::DefaultVal<bool> show_grid = true; // @hidden
+  bool locked = false;       // @hidden
+  bool orthographic = false; // @hidden
+  bool show_grid = true;     // @hidden
 
   // TODO these units as floats are wrong?
-  rfl::DefaultVal<pc::float3> position;
-  rfl::DefaultVal<pc::quaternion> rotation =
-      pc::quaternion{0.989016f, -0.147809f};
-  rfl::DefaultVal<float> distance = 250;
+  pc::float3 position;
+  pc::quaternion rotation = pc::quaternion{0.989016f, -0.147809f};
+  float distance = 250;
 };
 
 inline float4x4 extrinsic_from_camera_config(const CameraConfiguration &cam,
                                              const float uniform_scale = 1.0f) {
   // quaternion to rotation matrix (the orbit rotation)
-  const auto &q = cam.rotation.value();
+  const auto &q = cam.rotation;
   float qw = q.scalar, qx = q.x, qy = q.y, qz = q.z;
   float r00 = 1 - 2 * (qy * qy + qz * qz), r01 = 2 * (qx * qy - qz * qw),
         r02 = 2 * (qx * qz + qy * qw);
@@ -33,8 +31,8 @@ inline float4x4 extrinsic_from_camera_config(const CameraConfiguration &cam,
         r22 = 1 - 2 * (qx * qx + qy * qy);
 
   // camera world position
-  float d = cam.distance.value();
-  const auto &pos = cam.position.value();
+  float d = cam.distance;
+  const auto &pos = cam.position;
   float cam_wx = pos.x + r02 * d;
   float cam_wy = pos.y + r12 * d;
   float cam_wz = pos.z + r22 * d;

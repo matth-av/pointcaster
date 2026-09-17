@@ -20,13 +20,13 @@ namespace {
 
 ply::PlySequenceLoader::Config
 sequence_loader_config(PlyDeviceConfiguration &config) {
-  auto &sequence = config.sequence.value();
+  auto &sequence = config.sequence;
   return {
       .buffer_capacity =
-          static_cast<size_t>(std::max(8, sequence.buffer_capacity.value())),
+          static_cast<size_t>(std::max(8, sequence.buffer_capacity)),
       .prefetch_ahead =
-          static_cast<size_t>(std::max(1, sequence.prefetch_ahead.value())),
-      .position_units = config.position_units.value(),
+          static_cast<size_t>(std::max(1, sequence.prefetch_ahead)),
+      .position_units = config.position_units,
       .attributes = config.attributes,
   };
 }
@@ -82,7 +82,7 @@ bool PlyDevice::load(std::string_view url) {
   pc::logger()->trace("PlyDevice::load: parsing '{}'", path_str);
 
   auto &config = std::get<PlyDeviceConfiguration>(_config);
-  const auto position_units = config.position_units.value();
+  const auto position_units = config.position_units;
 
   // the header is scanned first so attribute choices the workspace already
   // holds apply on read
@@ -139,8 +139,7 @@ void PlyDevice::on_session_membership_changed(bool in_any_session) {
   {
     std::lock_guard lock(_device_mutex);
     if (!std::holds_alternative<PlyDeviceConfiguration>(_config)) return;
-    const auto &file_config =
-        std::get<PlyDeviceConfiguration>(_config).file.value();
+    const auto &file_config = std::get<PlyDeviceConfiguration>(_config).file;
     if (file_config.path.empty() || file_config.path == _loaded_file_path)
       return;
     path_to_load = file_config.path;
@@ -150,7 +149,7 @@ void PlyDevice::on_session_membership_changed(bool in_any_session) {
 
 void PlyDevice::reload() {
   const auto &config = std::get<PlyDeviceConfiguration>(_config);
-  load(config.file.value().path);
+  load(config.file.path);
 }
 
 void PlyDevice::tick(float delta_time) {
@@ -158,26 +157,26 @@ void PlyDevice::tick(float delta_time) {
   if (!_sequence_loader) return;
 
   auto &config = std::get<PlyDeviceConfiguration>(_config);
-  auto &seq = config.sequence.value();
+  auto &seq = config.sequence;
 
-  if (!seq.playing.value()) return;
+  if (!seq.playing) return;
 
-  _frame_accumulator += delta_time * static_cast<float>(seq.frame_rate.value());
+  _frame_accumulator += delta_time * static_cast<float>(seq.frame_rate);
   const auto advance = static_cast<int>(_frame_accumulator);
   if (advance == 0) return;
   _frame_accumulator -= static_cast<float>(advance);
 
   const auto total = static_cast<int>(_sequence_loader->frame_count());
-  const auto start = std::clamp(seq.start_frame.value(), 0, total - 1);
-  const auto end = (seq.end_frame.value() < 0)
+  const auto start = std::clamp(seq.start_frame, 0, total - 1);
+  const auto end = (seq.end_frame < 0)
                        ? total - 1
-                       : std::clamp(seq.end_frame.value(), start, total - 1);
+                       : std::clamp(seq.end_frame, start, total - 1);
   const auto range = end - start + 1;
 
   // once a non-looping sequence has reached its end, stay paused there even
   // if "playing" keeps getting set to true externally (e.g. held high via OSC)
-  if (!seq.looping.value() && _current_frame >= end) {
-    seq.playing.set(false);
+  if (!seq.looping && _current_frame >= end) {
+    seq.playing = false;
     return;
   }
 
@@ -186,17 +185,17 @@ void PlyDevice::tick(float delta_time) {
   auto next = _current_frame + advance;
 
   if (next > end) {
-    if (seq.looping.value()) {
+    if (seq.looping) {
       next = start + (next - start) % range;
     } else {
       next = end;
-      seq.playing.set(false);
+      seq.playing = false;
     }
   }
 
   if (next == _current_frame) return;
   _current_frame = next;
-  seq.current_frame.set(_current_frame);
+  seq.current_frame = _current_frame;
 
   _sequence_loader->set_loop(static_cast<size_t>(start),
                              static_cast<size_t>(end));
@@ -225,14 +224,14 @@ void PlyDevice::on_config_field_changed(std::string_view path) {
 
   // file path changed... reload
   if (path.contains("file")) {
-    auto file_config = config.file.value();
+    auto file_config = config.file;
     if (file_config.path != _loaded_file_path) {
       lock.unlock();
       if (!load(file_config.path)) {
         lock.lock();
         // rollback
         file_config.path = _loaded_file_path;
-        config.file.set(file_config);
+        config.file = file_config;
       }
       return;
     }
@@ -240,11 +239,11 @@ void PlyDevice::on_config_field_changed(std::string_view path) {
 
   if (path.contains("position_units")) {
     if (_sequence_loader) {
-      _sequence_loader->set_position_units(config.position_units.value());
+      _sequence_loader->set_position_units(config.position_units);
       reload_current_frame();
       return;
     }
-    const auto file_path = config.file.value().path;
+    const auto file_path = config.file.path;
     lock.unlock();
     load(file_path);
     return;
@@ -255,7 +254,7 @@ void PlyDevice::on_config_field_changed(std::string_view path) {
       _sequence_loader->set_attributes(config.attributes);
       reload_current_frame();
     } else {
-      const auto file_path = config.file.value().path;
+      const auto file_path = config.file.path;
       lock.unlock();
       load(file_path);
     }
@@ -273,19 +272,17 @@ void PlyDevice::on_config_field_changed(std::string_view path) {
 
     // scrub...
     if (path.contains("current_frame")) {
-      auto &sequence_config = config.sequence.value();
+      auto &sequence_config = config.sequence;
       const auto total = static_cast<int>(_sequence_loader->frame_count());
-      const auto start =
-          std::clamp(sequence_config.start_frame.value(), 0, total - 1);
+      const auto start = std::clamp(sequence_config.start_frame, 0, total - 1);
       const auto end =
-          (sequence_config.end_frame.value() < 0)
+          (sequence_config.end_frame < 0)
               ? total - 1
-              : std::clamp(sequence_config.end_frame.value(), start, total - 1);
+              : std::clamp(sequence_config.end_frame, start, total - 1);
 
-      _current_frame =
-          std::clamp(sequence_config.current_frame.value(), start, end);
-      if (_current_frame != sequence_config.current_frame.value()) {
-        sequence_config.current_frame.set(_current_frame);
+      _current_frame = std::clamp(sequence_config.current_frame, start, end);
+      if (_current_frame != sequence_config.current_frame) {
+        sequence_config.current_frame = _current_frame;
       }
 
       _sequence_loader->set_loop(static_cast<size_t>(start),
@@ -317,7 +314,7 @@ void PlyDevice::update_config(
       return;
     }
     const auto &cfg = std::get<PlyDeviceConfiguration>(_config);
-    const auto &file_config = cfg.file.value();
+    const auto &file_config = cfg.file;
     pc::logger()->trace("PlyDevice::update_config: id='{}' path='{}' "
                         "loaded='{}'",
                         cfg.id, file_config.path, _loaded_file_path);
@@ -390,8 +387,7 @@ void PlyDevice::apply_transform() {
   transformed_cloud->resize(point_count);
 
   backend->transform_point_cloud(*_input_cloud, *transformed_cloud,
-                                 config.transform.value(), config.color.value(),
-                                 world);
+                                 config.transform, config.color, world);
 
   pc::logger()->trace("PlyDevice::apply_transform: feeding operator pipeline");
   feed_operator_pipeline(std::move(transformed_cloud));

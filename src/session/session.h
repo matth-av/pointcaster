@@ -115,7 +115,7 @@ protected:
 
   operators::ConcurrentOperatorPipelineConfiguration &
   pipeline_config() override {
-    return _config.operator_pipeline.value();
+    return _config.operator_pipeline;
   }
 
 private:

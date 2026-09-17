@@ -576,7 +576,7 @@ void transform_point_cloud(const void *owner, const PointCloud &input_cloud,
 
   output_cloud.resize(new_point_count);
 
-  const auto &point_scale = transform.point_scale.value();
+  const auto &point_scale = transform.point_scale;
   if (point_scale.active) {
     const auto existing = output_cloud.attributes.find(point_scale_attribute);
     if (existing == output_cloud.attributes.end()) {

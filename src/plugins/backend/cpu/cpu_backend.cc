@@ -127,7 +127,7 @@ void transform_from(F &&get_point, size_t point_count, PointCloud &output_cloud,
 
   output_cloud.resize(new_point_count);
 
-  const auto &point_scale = transform.point_scale.value();
+  const auto &point_scale = transform.point_scale;
   if (point_scale.active) {
     const auto existing = output_cloud.attributes.find(point_scale_attribute);
     if (existing == output_cloud.attributes.end()) {

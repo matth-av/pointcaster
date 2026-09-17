@@ -274,7 +274,7 @@ public:
 {% elif m.kind == "variant" %}
         // a different alternative replaces the whole value; the same
         // alternative is diffed field by field below
-        if ({{ m.read }}{{ m.variant_access }}.index() != config.{{ m.name }}{% if m.is_rfl %}.value(){% endif %}{{ m.variant_access }}.index()) {
+        if ({{ m.read }}{{ m.variant_access }}.index() != config.{{ m.name }}{{ m.variant_access }}.index()) {
             {{ m.ref }} = config.{{ m.name }};
             anyChanged = true;
             emit {{ m.name }}Changed();
@@ -300,7 +300,7 @@ public:
 
         if (auto *alt = rfl::get_if<{{ alt.cpp_type }}>(&{{ alt.variant_ref }})) {
             const auto *incoming = rfl::get_if<{{ alt.cpp_type }}>(
-                &config.{{ v.name }}{% if v.is_rfl %}.value(){% endif %}{{ v.variant_access }});
+                &config.{{ v.name }}{{ v.variant_access }});
             if (incoming) {
 {% for m in alt.leaves %}
 {% set source = "incoming->" + m.name + (".value()" if m.is_rfl else "") %}
@@ -330,7 +330,7 @@ public:
 {% endfor %}
 
 {% for m in s.members if m.kind == "nested" %}
-        if (m_{{ m.name }}Adapter.setConfig(config.{{ m.name }}{% if m.is_rfl %}.value(){% endif %})) {
+        if (m_{{ m.name }}Adapter.setConfig(config.{{ m.name }})) {
             anyChanged = true;
             emit {{ m.name }}Changed();
         }

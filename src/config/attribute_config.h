@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <pointcaster/point_cloud.h>
-#include <rfl/DefaultVal.hpp>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -19,19 +18,13 @@ enum class AttributePrecision { Full, Bits16, Bits8 };
 struct AttributeConfiguration {
   std::string name; // @hidden
 
-  rfl::DefaultVal<AttributeTarget> target = AttributeTarget::None;
-  rfl::DefaultVal<AttributePrecision> precision = AttributePrecision::Full;
-  rfl::DefaultVal<float> range_min = 0.0f;
-  rfl::DefaultVal<float> range_max = 1.0f;
-};
+  AttributeTarget target = AttributeTarget::None;
+  AttributePrecision precision = AttributePrecision::Full;
+  float range_min = 0.0f;
+  float range_max = 1.0f;
 
-inline bool operator==(const AttributeConfiguration &a,
-                       const AttributeConfiguration &b) {
-  return a.name == b.name && a.target.value() == b.target.value() &&
-         a.precision.value() == b.precision.value() &&
-         a.range_min.value() == b.range_min.value() &&
-         a.range_max.value() == b.range_max.value();
-}
+  bool operator==(const AttributeConfiguration &) const = default;
+};
 
 // empty for None, which names nothing in the cloud
 constexpr std::string_view cloud_attribute_name(AttributeTarget target) {
@@ -46,8 +39,8 @@ constexpr std::string_view cloud_attribute_name(AttributeTarget target) {
 
 constexpr void visit_raw_type(const AttributeConfiguration &configuration,
                               auto &&visit) {
-  const bool signed_raw_type = configuration.range_min.value() < 0.0f;
-  switch (configuration.precision.value()) {
+  const bool signed_raw_type = configuration.range_min < 0.0f;
+  switch (configuration.precision) {
   case AttributePrecision::Full:
     return;
   case AttributePrecision::Bits16:

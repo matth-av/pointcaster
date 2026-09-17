@@ -38,9 +38,7 @@ public:
   void update_operator_in_pipeline(const OperatorConfigurationVariant &config,
                                    std::string_view changed_path);
 
-  size_t pipeline_concurrency() {
-    return pipeline_config().concurrency.value();
-  }
+  size_t pipeline_concurrency() { return pipeline_config().concurrency; }
 
 protected:
   Workspace *_workspace = nullptr;

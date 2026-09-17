@@ -7,7 +7,6 @@
 #include <config/transform_config.h>
 #include <pipeline/concurrent_operator_pipeline_config.h>
 #include <plugins/operators/operator_variants.h>
-#include <rfl/DefaultVal.hpp>
 #include <rfl/Literal.hpp>
 #include <string>
 #include <vector>
@@ -23,18 +22,18 @@ struct PlyDeviceConfiguration {
 
   std::string id; // @hidden
 
-  rfl::DefaultVal<std::string> label;     // @hidden
-  rfl::DefaultVal<std::string> parent_id; // @hidden
-  rfl::DefaultVal<int> order = 0;         // @hidden
+  std::string label;     // @hidden
+  std::string parent_id; // @hidden
+  int order = 0;         // @hidden
 
-  rfl::DefaultVal<FileFolderConfiguration> file;
-  rfl::DefaultVal<PositionUnits> position_units = PositionUnits::Automatic;
-  rfl::DefaultVal<SequenceConfiguration> sequence; // @folded
+  FileFolderConfiguration file;
+  PositionUnits position_units = PositionUnits::Automatic;
+  SequenceConfiguration sequence; // @folded
   std::vector<AttributeConfiguration> attributes;
-  rfl::DefaultVal<TransformConfiguration> transform;
-  rfl::DefaultVal<ColorTransformConfiguration> color; // @folded
+  TransformConfiguration transform;
+  ColorTransformConfiguration color; // @folded
 
-  rfl::DefaultVal<operators::ConcurrentOperatorPipelineConfiguration>
+  operators::ConcurrentOperatorPipelineConfiguration
       operator_pipeline;                                          // @hidden
   std::vector<operators::OperatorConfigurationVariant> operators; // @hidden
 

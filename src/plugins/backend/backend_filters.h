@@ -37,9 +37,9 @@ struct TransformFilterParameters {
   from_config(const pc::TransformConfiguration &transform_config,
               const pc::ColorTransformConfiguration &color_config) {
 
-    const auto &position = transform_config.position.value();
-    const auto &rotation = transform_config.rotation.value();
-    const auto &scale = transform_config.scale.value();
+    const auto &position = transform_config.position;
+    const auto &rotation = transform_config.rotation;
+    const auto &scale = transform_config.scale;
 
     auto min_x = static_cast<float>(std::numeric_limits<int16_t>::min());
     auto min_y = static_cast<float>(std::numeric_limits<int16_t>::min());
@@ -48,7 +48,7 @@ struct TransformFilterParameters {
     auto max_y = static_cast<float>(std::numeric_limits<int16_t>::max());
     auto max_z = static_cast<float>(std::numeric_limits<int16_t>::max());
 
-    const auto &crop = transform_config.bounds.value();
+    const auto &crop = transform_config.bounds;
     if (crop.active) {
       const auto &min_bound = crop.value.min;
       min_x = static_cast<float>(min_bound.x);
@@ -84,8 +84,8 @@ struct TransformFilterParameters {
             .max_x = max_x,
             .max_y = max_y,
             .max_z = max_z,
-            .sample = transform_config.sample.value(),
-            .color = {.gain = color_config.gain.value()}};
+            .sample = transform_config.sample,
+            .color = {.gain = color_config.gain}};
   }
 };
 

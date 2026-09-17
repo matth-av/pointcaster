@@ -6,7 +6,6 @@
 #include <pointcaster/config.h>
 #include <pointcaster/core_types.h>
 #include <pointcaster/point_cloud.h>
-#include <rfl/DefaultVal.hpp>
 #include <rfl/Skip.hpp>
 #include <rfl/internal/to_ptr_named_tuple.hpp>
 
@@ -41,7 +40,7 @@ public:
 
   // returns false if path not found, or if the field is read-only
   [[maybe_unused]] POINTCASTER_CONFIG_EXPORT bool set(std::string_view path,
-                                                    ConfigValue value);
+                                                      ConfigValue value);
 
   POINTCASTER_CONFIG_EXPORT bool is_readonly(std::string_view path) const;
 
@@ -58,7 +57,7 @@ public:
   using SubscriptionId = std::uint64_t;
 
   POINTCASTER_CONFIG_EXPORT SubscriptionId on_change(std::string_view prefix,
-                                                   ChangeCallback cb);
+                                                     ChangeCallback cb);
 
   // ids are never reused, so removing one that's already gone is a no-op
   // rather than a match against some later subscription
@@ -78,12 +77,6 @@ private:
 };
 
 // ---- rfl wrapper type traits ----
-
-template <class T> struct is_rfl_default_val : std::false_type {};
-template <class T>
-struct is_rfl_default_val<rfl::DefaultVal<T>> : std::true_type {};
-template <class T>
-inline constexpr bool is_rfl_default_val_v = is_rfl_default_val<T>::value;
 
 template <class T> struct is_rfl_skip : std::false_type {};
 template <class T> struct is_rfl_skip<rfl::Skip<T>> : std::true_type {};
@@ -264,9 +257,8 @@ void register_config(ConfigRegistry &reg, std::string_view prefix, T &cfg) {
   auto ptr_nt = rfl::internal::to_ptr_named_tuple(cfg);
   ptr_nt.apply([&](auto field) {
     using FieldType = std::decay_t<decltype(field)>;
-    using ValPtrType = typename FieldType::Type; // e.g. rfl::DefaultVal<int>*
-    using ValType =
-        std::remove_pointer_t<ValPtrType>; // e.g. rfl::DefaultVal<int>
+    using ValPtrType = typename FieldType::Type;       // e.g. int*
+    using ValType = std::remove_pointer_t<ValPtrType>; // e.g. int
 
     if constexpr (is_rfl_skip_v<ValType>) return;
 
@@ -284,31 +276,7 @@ void register_config(ConfigRegistry &reg, std::string_view prefix, T &cfg) {
       return;
     }
 
-    if constexpr (is_rfl_default_val_v<ValType>) {
-      using Inner = typename ValType::Type;
-      if constexpr (is_toggleable_v<Inner>) {
-        if constexpr (RegistryLeaf<typename Inner::value_type>) {
-          register_toggleable<Inner>(
-              reg, path, [ptr] { return ptr->value(); },
-              [ptr](const Inner &held) { ptr->set(held); });
-        }
-      } else if constexpr (std::is_same_v<Inner, position_bounds>) {
-        reg.register_field(
-            path,
-            {[ptr]() -> ConfigValue { return to_config_value(ptr->value()); },
-             [ptr](ConfigValue v) { ptr->set(from_config_value<Inner>(v)); }});
-      } else if constexpr (RflTaggedUnion<Inner>) {
-        register_variant(reg, path, ptr->value().variant());
-      } else if constexpr (RflTraversable<Inner>) {
-        register_config(reg, path, ptr->value());
-      } else if constexpr (ConfigValueCompatible<Inner>) {
-        reg.register_field(
-            path,
-            {[ptr]() -> ConfigValue { return to_config_value(ptr->value()); },
-             [ptr](ConfigValue v) { ptr->set(from_config_value<Inner>(v)); }});
-      }
-      // else: vector, map, etc. inside DefaultVal and skip
-    } else if constexpr (is_toggleable_v<ValType>) {
+    if constexpr (is_toggleable_v<ValType>) {
       if constexpr (RegistryLeaf<typename ValType::value_type>) {
         register_toggleable<ValType>(
             reg, path, [ptr] { return *ptr; },

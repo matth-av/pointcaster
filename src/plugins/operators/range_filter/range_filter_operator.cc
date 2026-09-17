@@ -37,9 +37,9 @@ PipelineFramePtr RangeFilterOperator::process(PipelineFramePtr input) {
     return input;
   }
 
-  const auto &bounds = config.bounds.value();
-  const bool invert = config.invert.value();
-  const bool bypass = config.bypass.value();
+  const auto &bounds = config.bounds;
+  const bool invert = config.invert;
+  const bool bypass = config.bypass;
 
   PointCloud empty;
   auto filtered_cloud = bypass ? nullptr : std::make_shared<PointCloud>();
@@ -50,7 +50,7 @@ PipelineFramePtr RangeFilterOperator::process(PipelineFramePtr input) {
 
   const auto point_count = static_cast<int>(result.point_count);
 
-  if (point_count <= config.count_threshold.value()) {
+  if (point_count <= config.count_threshold) {
     clear_outputs(point_count);
     if (bypass) return input;
     auto output_frame = input->clone();
@@ -62,8 +62,7 @@ PipelineFramePtr RangeFilterOperator::process(PipelineFramePtr input) {
     ProfilingZone output_zone("RangeFilterOperator::outputs");
 
     const auto count = static_cast<float>(result.point_count);
-    const auto max_fill =
-        static_cast<float>(std::max(1, config.max_fill.value()));
+    const auto max_fill = static_cast<float>(std::max(1, config.max_fill));
     const auto input_count =
         static_cast<float>(std::max<size_t>(1, result.input_count));
 

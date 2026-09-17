@@ -78,10 +78,10 @@ void AttributeListModel::refresh() {
               entries.push_back(
                   {.name = QString::fromStdString(stored->name),
                    .sourceType = QString::fromStdString(attribute.type_name),
-                   .target = static_cast<int>(stored->target.value()),
-                   .precision = static_cast<int>(stored->precision.value()),
-                   .rangeMin = stored->range_min.value(),
-                   .rangeMax = stored->range_max.value()});
+                   .target = static_cast<int>(stored->target),
+                   .precision = static_cast<int>(stored->precision),
+                   .rangeMin = stored->range_min,
+                   .rangeMax = stored->range_max});
             }
           }
         },
@@ -143,12 +143,12 @@ bool AttributeListModel::setTarget(int row, int target) {
     const auto chosen = static_cast<AttributeTarget>(target);
     if (chosen != AttributeTarget::None) {
       for (auto &other : rows) {
-        if (other.target.value() == chosen) {
-          other.target.set(AttributeTarget::None);
+        if (other.target == chosen) {
+          other.target = AttributeTarget::None;
         }
       }
     }
-    stored.target.set(chosen);
+    stored.target = chosen;
   });
 }
 
@@ -158,14 +158,14 @@ bool AttributeListModel::setPrecision(int row, int precision) {
         precision > static_cast<int>(AttributePrecision::Bits8)) {
       return;
     }
-    stored.precision.set(static_cast<AttributePrecision>(precision));
+    stored.precision = static_cast<AttributePrecision>(precision);
   });
 }
 
 bool AttributeListModel::setRange(int row, float rangeMin, float rangeMax) {
   return editRow(row, [&](auto &, auto &stored) {
-    stored.range_min.set(rangeMin);
-    stored.range_max.set(rangeMax);
+    stored.range_min = rangeMin;
+    stored.range_max = rangeMax;
   });
 }
 

@@ -9,6 +9,9 @@ namespace pc {
 
 // the workspace configuration gets serialized as a named
 // top-level element
+//
+// every read needs rfl::DefaultIfMissing, it's what lets configuration
+// structs hold plain members: a missing field keeps its in-class initialiser
 using WorkspaceFile =
     rfl::NamedTuple<rfl::Field<"workspace", WorkspaceConfiguration>>;
 

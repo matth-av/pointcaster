@@ -90,15 +90,14 @@ T default_attribute_value(std::string_view name,
 auto PointCloud::compress(const CodecConfiguration &codec_config) const
     -> std::vector<std::byte> {
   ProfilingZone zone("PointCloud::compress");
-  const auto &compression = codec_config.compression.value().variant();
+  const auto &compression = codec_config.compression.variant();
 
   const auto timestamp = static_cast<uint64_t>(
       duration_cast<milliseconds>(system_clock::now().time_since_epoch())
           .count());
   const uint64_t point_count = size();
 
-  const auto selected =
-      empty() ? PointCloudCodec::None : codec_config.codec.value();
+  const auto selected = empty() ? PointCloudCodec::None : codec_config.codec;
   const auto codec_id = static_cast<uint8_t>(selected);
   std::vector<std::byte> buffer;
 

@@ -38,7 +38,7 @@ BackendType DevicePlugin::current_backend_type() const {
   const auto requested_backend = std::visit(
       [](const auto &device_config) {
         if constexpr (requires { device_config.transform; }) {
-          return device_config.transform.value().backend.value();
+          return device_config.transform.backend;
         } else {
           return BackendType::CPU;
         }

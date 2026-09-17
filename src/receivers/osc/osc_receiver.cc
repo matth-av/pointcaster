@@ -23,12 +23,12 @@ OscReceiver::~OscReceiver() {
 }
 
 OscReceiverConfiguration &OscReceiver::config() {
-  return _workspace.config.osc_receiver.value();
+  return _workspace.config.osc_receiver;
 }
 
 void OscReceiver::reconfigure() {
-  const bool should_run = config().enable.value();
-  const int port = std::clamp(config().port.value(), 1024, 49151);
+  const bool should_run = config().enable;
+  const int port = std::clamp(config().port, 1024, 49151);
 
   if (_server && (!should_run || port != _active_port)) stop();
   if (!_server && should_run) start(port);

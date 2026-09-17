@@ -219,8 +219,8 @@ public:
     int frame = 0;
     std::visit(
         [&](const auto &config) {
-          if constexpr (requires { config.sequence.value().current_frame; })
-            frame = config.sequence.value().current_frame.value();
+          if constexpr (requires { config.sequence.current_frame; })
+            frame = config.sequence.current_frame;
         },
         _plugin->config());
     updateSequenceState(frame);
@@ -240,8 +240,8 @@ public:
     bool playing = false;
     std::visit(
         [&](const auto &config) {
-          if constexpr (requires { config.sequence.value().playing; })
-            playing = config.sequence.value().playing.value();
+          if constexpr (requires { config.sequence.playing; })
+            playing = config.sequence.playing;
         },
         _plugin->config());
 

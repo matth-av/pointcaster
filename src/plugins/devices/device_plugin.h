@@ -288,7 +288,7 @@ public:
         [](auto &device_config)
             -> operators::ConcurrentOperatorPipelineConfiguration & {
           if constexpr (requires { device_config.operator_pipeline; }) {
-            return device_config.operator_pipeline.value();
+            return device_config.operator_pipeline;
           } else {
             // TODO
             // groups have no operator pipeline yet...

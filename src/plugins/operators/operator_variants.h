@@ -55,14 +55,14 @@ operator_info_from_variant(const OperatorConfigurationVariant &v) {
 inline std::string operator_address(const OperatorConfigurationVariant &v) {
   return std::visit(
       [](const auto &config) {
-        const auto &label = config.label.value();
+        const auto &label = config.label;
         return !label.empty() ? label : config.id;
       },
       v);
 }
 
 inline std::string operator_label(const OperatorConfigurationVariant &v) {
-  return std::visit([](const auto &config) { return config.label.value(); }, v);
+  return std::visit([](const auto &config) { return config.label; }, v);
 }
 
 // creates the configuration for the named operator plugin with a fresh id and a
@@ -84,7 +84,7 @@ make_operator_config(std::string_view plugin_name, Labels &&existing_labels) {
 }
 
 constexpr bool check_active(const OperatorConfigurationVariant &v) {
-  return std::visit([&](auto &config) { return config.active.value(); }, v);
+  return std::visit([&](auto &config) { return config.active; }, v);
 }
 
 } // namespace pc::operators

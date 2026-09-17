@@ -114,10 +114,9 @@ std::vector<std::byte> encode_draco(const PointCloud &cloud,
                  bounds.max.y, bounds.max.z});
 
   Encoder encoder;
-  encoder.SetSpeedOptions(options.encode_speed.value(),
-                          options.decode_speed.value());
+  encoder.SetSpeedOptions(options.encode_speed, options.decode_speed);
 
-  const auto quantization = options.attribute_quantization.value();
+  const auto quantization = options.attribute_quantization;
   if (quantization.active) {
     encoder.SetAttributeQuantization(PointAttribute::GENERIC,
                                      std::clamp(quantization.value, 1, 30));

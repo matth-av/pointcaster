@@ -59,8 +59,8 @@ PipelineFramePtr ClusterExtractionOperator::process(PipelineFramePtr input) {
 
   // reduce the cloud to one point per occupied voxel
 
-  const auto leaf_size = static_cast<float>(
-      std::max<int16_t>(1, config.voxel_leaf_size.value().mm));
+  const auto leaf_size =
+      static_cast<float>(std::max<int16_t>(1, config.voxel_leaf_size.mm));
 
   auto voxelised_cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
   if (!cloud->empty()) {
@@ -69,18 +69,17 @@ PipelineFramePtr ClusterExtractionOperator::process(PipelineFramePtr input) {
     voxel_grid.setInputCloud(cloud);
     voxel_grid.setLeafSize(leaf_size, leaf_size, leaf_size);
     voxel_grid.setMinimumPointsNumberPerVoxel(static_cast<unsigned int>(
-        std::max(0, config.minimum_points_per_voxel.value())));
+        std::max(0, config.minimum_points_per_voxel)));
     voxel_grid.filter(*voxelised_cloud);
   }
 
-  if (config.filter_outlier_voxels.value() && !voxelised_cloud->empty()) {
+  if (config.filter_outlier_voxels && !voxelised_cloud->empty()) {
     ProfilingZone outlier_zone("Outlier filter");
     pcl::StatisticalOutlierRemoval<pcl::PointXYZ> outlier_filter;
     outlier_filter.setInputCloud(voxelised_cloud);
-    outlier_filter.setMeanK(
-        std::max(1, config.outlier_filter_voxel_count.value()));
+    outlier_filter.setMeanK(std::max(1, config.outlier_filter_voxel_count));
     outlier_filter.setStddevMulThresh(
-        std::max(0.0f, config.outlier_filter_deviation_threshold.value()));
+        std::max(0.0f, config.outlier_filter_deviation_threshold));
     auto filtered = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
     outlier_filter.filter(*filtered);
     voxelised_cloud = std::move(filtered);
@@ -100,11 +99,11 @@ PipelineFramePtr ClusterExtractionOperator::process(PipelineFramePtr input) {
     ProfilingZone extract_zone("Extract clusters");
     pcl::EuclideanClusterExtraction<pcl::PointXYZ> extraction;
     extraction.setClusterTolerance(
-        static_cast<double>(config.cluster_tolerance.value().mm));
+        static_cast<double>(config.cluster_tolerance.mm));
     extraction.setMinClusterSize(static_cast<pcl::uindex_t>(
-        std::max(1, config.cluster_voxel_count_min.value())));
+        std::max(1, config.cluster_voxel_count_min)));
     extraction.setMaxClusterSize(static_cast<pcl::uindex_t>(
-        std::max(1, config.cluster_voxel_count_max.value())));
+        std::max(1, config.cluster_voxel_count_max)));
     extraction.setSearchMethod(tree);
     extraction.setInputCloud(voxelised_cloud);
     extraction.extract(cluster_indices);
@@ -166,9 +165,9 @@ PipelineFramePtr ClusterExtractionOperator::process(PipelineFramePtr input) {
         };
 
     const auto match_tolerance = static_cast<float>(
-        std::max<int16_t>(0, config.cluster_match_tolerance.value().mm));
-    const auto timeout = std::chrono::milliseconds(
-        std::max(0, config.cluster_timeout_ms.value()));
+        std::max<int16_t>(0, config.cluster_match_tolerance.mm));
+    const auto timeout =
+        std::chrono::milliseconds(std::max(0, config.cluster_timeout_ms));
     const auto now = std::chrono::steady_clock::now();
 
     std::vector<uint8_t> matched_existing_clusters(existing_clusters.size(), 0);

@@ -168,10 +168,9 @@ void Workspace::rebuild_config_registry() {
   }
 
   // and for other configs held by the workspace instance
-  pc::register_config(config_registry, "streaming",
-                      config.point_streamer.value());
-  pc::register_config(config_registry, "osc", config.osc_receiver.value());
-  pc::register_config(config_registry, "publishers", config.publishers.value());
+  pc::register_config(config_registry, "streaming", config.point_streamer);
+  pc::register_config(config_registry, "osc", config.osc_receiver);
+  pc::register_config(config_registry, "publishers", config.publishers);
 
   // register configs for every device plugin
   for (auto &device_plugin : devices) {
@@ -200,7 +199,7 @@ void Workspace::rebuild_config_registry() {
     for (auto &device_variant : config.devices) {
       std::visit(
           [&](auto &device_config) {
-            if (device_config.parent_id.value() == group_id) {
+            if (device_config.parent_id == group_id) {
               const std::string device_address =
                   pc::devices::device_address(config, device_config.id);
               config_registry.set("device/" + device_address + "/" + field_path,
@@ -223,7 +222,7 @@ void Workspace::rebuild_config_registry() {
           device_variant);
     }
     for (auto &child_group : config.device_groups) {
-      if (child_group.parent_id.value() == group_id) {
+      if (child_group.parent_id == group_id) {
         const std::string child_group_address =
             pc::devices::device_address(config, child_group.id);
         config_registry.set("device/" + child_group_address + "/" + field_path,
@@ -243,13 +242,13 @@ void Workspace::rebuild_config_registry() {
     config_registry.register_field(
         base + "playing",
         {.get = [&group_config]() -> pc::ConfigValue {
-           return group_config.sequence.value().playing.value();
+           return group_config.sequence.playing;
          },
          .set =
              [&group_config,
               propagate_to_group_children](pc::ConfigValue value) {
-               group_config.sequence.value().playing.set(
-                   pc::from_config_value<bool>(value));
+               group_config.sequence.playing =
+                   pc::from_config_value<bool>(value);
                propagate_to_group_children(group_config.id, "sequence/playing",
                                            value);
              }});
@@ -257,13 +256,13 @@ void Workspace::rebuild_config_registry() {
     config_registry.register_field(
         base + "looping",
         {.get = [&group_config]() -> pc::ConfigValue {
-           return group_config.sequence.value().looping.value();
+           return group_config.sequence.looping;
          },
          .set =
              [&group_config,
               propagate_to_group_children](pc::ConfigValue value) {
-               group_config.sequence.value().looping.set(
-                   pc::from_config_value<bool>(value));
+               group_config.sequence.looping =
+                   pc::from_config_value<bool>(value);
                propagate_to_group_children(group_config.id, "sequence/looping",
                                            value);
              }});
@@ -271,13 +270,13 @@ void Workspace::rebuild_config_registry() {
     config_registry.register_field(
         base + "current_frame",
         {.get = [&group_config]() -> pc::ConfigValue {
-           return group_config.sequence.value().current_frame.value();
+           return group_config.sequence.current_frame;
          },
          .set =
              [&group_config,
               propagate_to_group_children](pc::ConfigValue value) {
-               group_config.sequence.value().current_frame.set(
-                   pc::from_config_value<int>(value));
+               group_config.sequence.current_frame =
+                   pc::from_config_value<int>(value);
                propagate_to_group_children(group_config.id,
                                            "sequence/current_frame", value);
              }});

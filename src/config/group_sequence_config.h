@@ -1,11 +1,9 @@
 #pragma once
 
-#include <rfl/DefaultVal.hpp>
-
 namespace pc {
 struct GroupSequenceConfiguration {
-  rfl::DefaultVal<bool> playing = true;   // @hidden
-  rfl::DefaultVal<bool> looping = true;   // @hidden
-  rfl::DefaultVal<int> current_frame = 0; // @hidden
+  bool playing = true;   // @hidden
+  bool looping = true;   // @hidden
+  int current_frame = 0; // @hidden
 };
 } // namespace pc

@@ -246,12 +246,12 @@ void OrbbecDevice::start_sync() {
 
   const bool is_lidar = rfl::holds_alternative<
       OrbbecDeviceConfiguration::LidarSensorConfiguration>(
-      config.sensor.value().variant());
+      config.sensor.variant());
 
   const uint16_t net_device_port = is_lidar ? 2228 : 8090;
 
-  const auto &network_config = config.network.value();
-  const auto &ip = network_config.ip_address.value();
+  const auto &network_config = config.network;
+  const auto &ip = network_config.ip_address;
 
   bool connected_using_ip = false;
   if (!ob_device && !ip.empty()) {
@@ -262,14 +262,14 @@ void OrbbecDevice::start_sync() {
       connected_using_ip = true;
     } catch (const ob::Error &e) {
       pc::logger()->error("Failed to create OrbbecDevice at {}:{} {}",
-                          network_config.ip_address.value(), net_device_port,
+                          network_config.ip_address, net_device_port,
                           e.getMessage());
       set_error_state(true);
       set_loading(false);
       return;
     } catch (...) {
       pc::logger()->error("Unknown error creating Orbbec NetDevice at {}:{}",
-                          network_config.ip_address.value(), net_device_port);
+                          network_config.ip_address, net_device_port);
       set_error_state(true);
       set_loading(false);
       return;
@@ -297,7 +297,7 @@ void OrbbecDevice::start_sync() {
   if (device_ip != unassigned_ip && ip != device_ip) {
     pc::logger()->warn("OrbbecDevice ({}) is at {}, was {}", config.id,
                        device_ip, ip.empty() ? "unset" : ip);
-    config.network.value().ip_address.set(device_ip);
+    config.network.ip_address = device_ip;
     config_changed = true;
   }
 
@@ -321,8 +321,7 @@ void OrbbecDevice::stop_sync() {
   auto config = std::get<OrbbecDeviceConfiguration>(this->config_variant());
   std::lock_guard lock(orbbec_context().device_api_access);
   if (!_pipeline_thread.joinable()) return;
-  pc::logger()->info("Closing OrbbecDevice {}",
-                     config.network.value().ip_address.value());
+  pc::logger()->info("Closing OrbbecDevice {}", config.network.ip_address);
   pc::logger()->trace("Joining pipeline thread");
   _pipeline_thread.request_stop();
   _pipeline_thread.join();
@@ -371,7 +370,7 @@ void OrbbecDevice::pipeline_thread_work(std::stop_token stop_token,
   // calls drive the pipeline, so each sensor type get their own worker branch
   const auto &device_config = std::get<OrbbecDeviceConfiguration>(_config);
 
-  device_config.sensor.value().visit([&](const auto &sensor_config) {
+  device_config.sensor.visit([&](const auto &sensor_config) {
     using SensorConfiguration = std::decay_t<decltype(sensor_config)>;
 
     if constexpr (std::same_as<
@@ -405,12 +404,12 @@ void OrbbecDevice::rgbd_pipeline_thread_work(
     auto &device_config = std::get<OrbbecDeviceConfiguration>(_config);
     auto &sensor_config =
         rfl::get<OrbbecDeviceConfiguration::RgbdSensorConfiguration>(
-            device_config.sensor.get().variant());
+            device_config.sensor.variant());
 
     const auto [colour_width, colour_height] =
-        orbbec::resolution(sensor_config.color_resolution.value());
+        orbbec::resolution(sensor_config.color_resolution);
     const auto [depth_width, depth_height] =
-        orbbec::resolution(sensor_config.depth_resolution.value());
+        orbbec::resolution(sensor_config.depth_resolution);
 
     auto colour_profile_list = pipeline.getStreamProfileList(OB_SENSOR_COLOR);
     // TODO enable without colour too
@@ -432,7 +431,7 @@ void OrbbecDevice::rgbd_pipeline_thread_work(
 
     std::shared_ptr<ob::VideoStreamProfile> depth_profile;
 
-    if (sensor_config.conversion_mode.value() ==
+    if (sensor_config.conversion_mode ==
         OrbbecDeviceConfiguration::PointConversionMode::D2C) {
 
       // try hardware D2C first
@@ -471,7 +470,7 @@ void OrbbecDevice::rgbd_pipeline_thread_work(
         throw std::format_error("Device does not support D2C conversion mode");
       }
 
-    } else if (sensor_config.conversion_mode.value() ==
+    } else if (sensor_config.conversion_mode ==
                OrbbecDeviceConfiguration::PointConversionMode::C2D) {
       // need to do stuff here
     }
@@ -479,7 +478,7 @@ void OrbbecDevice::rgbd_pipeline_thread_work(
     // sensor_config aliases _config, so this lands on the plugin's own copy
     // directly. fps is rfl::Skip, so there is nothing to persist upstream
     const auto fps = std::min(depth_profile->fps(), colour_profile->fps());
-    sensor_config.fps.set(fps);
+    sensor_config.fps = fps;
 
     pc::logger()->trace("enabling stream at: {} fps", fps);
 
@@ -492,13 +491,13 @@ void OrbbecDevice::rgbd_pipeline_thread_work(
     pipeline.enableFrameSync();
 
     // this is frame sync between devices
-    if (sensor_config.sync_mode.value() ==
+    if (sensor_config.sync_mode ==
         OrbbecDeviceConfiguration::SyncMode::Software) {
       OBMultiDeviceSyncConfig ob_sync_config{};
       ob_sync_config.syncMode = OB_MULTI_DEVICE_SYNC_MODE_SOFTWARE_TRIGGERING;
       ob_device->setMultiDeviceSyncConfig(ob_sync_config);
       orbbec_context().add_to_software_sync_list(ob_device);
-    } else if (sensor_config.sync_mode.value() ==
+    } else if (sensor_config.sync_mode ==
                OrbbecDeviceConfiguration::SyncMode::Standalone) {
       OBMultiDeviceSyncConfig ob_sync_config{};
       ob_sync_config.syncMode = OB_MULTI_DEVICE_SYNC_MODE_STANDALONE;
@@ -522,7 +521,7 @@ void OrbbecDevice::rgbd_pipeline_thread_work(
     backend::CameraIntrinsics color_intrinsics;
     size_t max_point_count{};
 
-    if (sensor_config.conversion_mode.value() ==
+    if (sensor_config.conversion_mode ==
         OrbbecDeviceConfiguration::PointConversionMode::D2C) {
       // we need the colour intrinsic to transform the depth point to
       // colour space
@@ -535,7 +534,7 @@ void OrbbecDevice::rgbd_pipeline_thread_work(
 
       max_point_count = colour_width * colour_height;
 
-    } else if (sensor_config.conversion_mode.value() ==
+    } else if (sensor_config.conversion_mode ==
                OrbbecDeviceConfiguration::PointConversionMode::C2D) {
     }
 
@@ -629,8 +628,8 @@ void OrbbecDevice::rgbd_pipeline_thread_work(
               if (backend) {
                 backend->project_transform_frame_data(
                     ob_depth_data, ob_color_data, *point_cloud,
-                    color_intrinsics, device_config.transform.value(),
-                    device_config.color.value(), world, render_output);
+                    color_intrinsics, device_config.transform,
+                    device_config.color, world, render_output);
               }
             }
 
@@ -701,7 +700,7 @@ void OrbbecDevice::lidar_pipeline_thread_work(
     auto &device_config = std::get<OrbbecDeviceConfiguration>(_config);
     auto &sensor_config =
         rfl::get<OrbbecDeviceConfiguration::LidarSensorConfiguration>(
-            device_config.sensor.get().variant());
+            device_config.sensor.variant());
 
     std::shared_ptr<ob::Sensor> lidar_sensor = nullptr;
 
@@ -732,10 +731,10 @@ void OrbbecDevice::lidar_pipeline_thread_work(
           stream_profiles->getProfile(i)->as<ob::LiDARStreamProfile>();
       auto it = available_scan_rates.find(profile->getScanRate());
       if (it != available_scan_rates.end()) {
-        if (it->second == sensor_config.scan_rate.value()) {
+        if (it->second == sensor_config.scan_rate) {
           target_profile = profile;
           pc::logger()->trace("Initialising sensor with scan rate of {} hz",
-                              sensor_config.scan_rate.value());
+                              sensor_config.scan_rate);
           break;
         }
       }
@@ -823,7 +822,7 @@ void OrbbecDevice::lidar_pipeline_thread_work(
         // come from?
         const auto &sensor_config =
             rfl::get<OrbbecDeviceConfiguration::LidarSensorConfiguration>(
-                device_config.sensor.get().variant());
+                device_config.sensor.variant());
 
         ProfilingZone process_frame_zone("OrbbecDevice::process_lidar_frame");
         FrameTaskSlot frame_task_slot(*this);
@@ -842,9 +841,9 @@ void OrbbecDevice::lidar_pipeline_thread_work(
         constexpr uint16_t maximum_intensity = 2000;
 
         using ColorMapping = OrbbecDeviceConfiguration::ColorMapping;
-        const auto color_mapping = sensor_config.color_mapping.value();
+        const auto color_mapping = sensor_config.color_mapping;
         // cuts the scan off, and doubles as the range the Depth mapping
-        const auto &distance_cap = sensor_config.maximum_distance.value();
+        const auto &distance_cap = sensor_config.maximum_distance;
         const auto maximum_distance =
             distance_cap.active
                 ? std::max(static_cast<float>(distance_cap.value.mm), 1.0f)
@@ -916,8 +915,8 @@ void OrbbecDevice::lidar_pipeline_thread_work(
           ProfilingZone backend_transform_zone(
               "OrbbecDevice::backend_transform");
           backend->transform_point_cloud(*scan_cloud, *point_cloud,
-                                         device_config.transform.value(),
-                                         device_config.color.value(), world);
+                                         device_config.transform,
+                                         device_config.color, world);
         }
 
         feed_operator_pipeline(std::move(point_cloud));
@@ -1014,13 +1013,12 @@ void OrbbecDevice::timeout_thread_work(std::stop_token stop_token) {
 
 void OrbbecDevice::on_config_field_changed(std::string_view path) {
   auto &config = std::get<OrbbecDeviceConfiguration>(_config);
-  auto &network_config = config.network.value();
+  auto &network_config = config.network;
 
   if (network_config.apply.value()) {
     network_config.apply.set(false);
-    set_ip(network_config.ip_address.value(),
-           network_config.subnet_mask.value(),
-           network_config.gateway_address.value());
+    set_ip(network_config.ip_address, network_config.subnet_mask,
+           network_config.gateway_address);
   }
 
   // a different sensor type needs a different pipeline

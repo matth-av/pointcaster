@@ -15,11 +15,11 @@ void LookAtCamera::update_config(const LookAtCameraConfiguration &config) {
 
   auto &p = _projection_args;
 
-  p.pixel_width = config.resolution_x.value();
-  p.pixel_height = config.resolution_y.value();
+  p.pixel_width = config.resolution_x;
+  p.pixel_height = config.resolution_y;
 
   const float fov_y_radians =
-      config.vertical_fov.value() * std::numbers::pi_v<float> / 180.0f;
+      config.vertical_fov * std::numbers::pi_v<float> / 180.0f;
   const float cot_half_fov_y = 1.0f / std::tan(fov_y_radians * 0.5f);
   p.fy = (static_cast<float>(p.pixel_height) * 0.5f) * cot_half_fov_y;
   p.fx = p.fy;
@@ -29,8 +29,8 @@ void LookAtCamera::update_config(const LookAtCameraConfiguration &config) {
   // for mm to m conversion
   constexpr float pos_scale = 1000.0f;
 
-  const auto raw_target = config.look_at_position.value();
-  const auto raw_pos = config.position.value();
+  const auto raw_target = config.look_at_position;
+  const auto raw_pos = config.position;
   const pc::float3 target{raw_target.x * pos_scale, raw_target.y * pos_scale,
                           raw_target.z * pos_scale};
   const pc::float3 pos{raw_pos.x * pos_scale, raw_pos.y * pos_scale,
@@ -66,7 +66,7 @@ void LookAtCamera::update_config(const LookAtCameraConfiguration &config) {
       //
       0, 0, 0, 1};
 
-  _flood_fill_passes = config.color_fill_passes.value();
+  _flood_fill_passes = config.color_fill_passes;
 
 } // namespace pc::camera
 

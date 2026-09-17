@@ -61,10 +61,9 @@ void publisher_thread_loop(std::stop_token stop_token, Workspace &workspace) {
 
     {
       std::scoped_lock lock(workspace.config_access);
-      publish_paths = workspace.config.publish_paths.value();
-      push_paths = workspace.config.push_paths.value();
-      publish_hz =
-          std::max(1, workspace.config.publishers.value().publish_hz.value());
+      publish_paths = workspace.config.publish_paths;
+      push_paths = workspace.config.push_paths;
+      publish_hz = std::max(1, workspace.config.publishers.publish_hz);
     }
 
     current_snapshot.swap(previous_snapshot);

@@ -351,7 +351,7 @@ void quantise_attribute(PointCloud &cloud, std::string_view name,
     if (values.empty()) return;
 
     const auto encoding = attribute_encoding_for_range<RawType>(
-        configuration.range_min.value(), configuration.range_max.value());
+        configuration.range_min, configuration.range_max);
 
     std::vector<RawType> raw(values.size());
     tbb::parallel_for(tbb::blocked_range<size_t>(0, values.size()),
@@ -417,10 +417,10 @@ read_point_cloud(const std::string &path, PositionUnits units,
           return candidate.name == element->properties[index].name;
         });
     if (configuration == attributes.end()) continue;
-    const auto target = configuration->target.value();
+    const auto target = configuration->target;
     if (target == AttributeTarget::None) continue;
     if (std::ranges::any_of(targeted, [&](const auto *claimed) {
-          return claimed->target.value() == target;
+          return claimed->target == target;
         })) {
       continue;
     }
@@ -436,7 +436,7 @@ read_point_cloud(const std::string &path, PositionUnits units,
   attribute_values.reserve(targeted.size());
   for (const auto *configuration : targeted) {
     attribute_values.push_back(
-        cloud->add<float>(cloud_attribute_name(configuration->target.value())));
+        cloud->add<float>(cloud_attribute_name(configuration->target)));
   }
 
   if (element->count == 0) return cloud;
@@ -449,7 +449,7 @@ read_point_cloud(const std::string &path, PositionUnits units,
   if (!filled) return nullptr;
 
   for (const auto *configuration : targeted) {
-    const auto target = configuration->target.value();
+    const auto target = configuration->target;
     const auto cloud_name = cloud_attribute_name(target);
 
     // a point scale is a world space radius, so it takes units in 'position'

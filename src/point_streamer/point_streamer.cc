@@ -50,7 +50,7 @@ bool channel_enabled(
       std::find_if(channel_configs.begin(), channel_configs.end(),
                    [&](auto &config) { return config.address == address; });
   if (it == channel_configs.end()) return true;
-  return it->enabled.value();
+  return it->enabled;
 }
 
 void streaming_thread_loop(
@@ -71,12 +71,12 @@ void streaming_thread_loop(
   // ALSO the whole syncing strings and collections each frame seems wasteful
   const auto sync_config_vars = [&] {
     std::lock_guard lock(workspace.config_access);
-    const auto &stream_config = workspace.config.point_streamer.value();
-    address = stream_config.address.value();
-    port = stream_config.port.value();
-    publish_hz = stream_config.publish_hz.value();
-    codec_config = stream_config.codec_config.value();
-    publish_every_frame = stream_config.publish_every_frame.value();
+    const auto &stream_config = workspace.config.point_streamer;
+    address = stream_config.address;
+    port = stream_config.port;
+    publish_hz = stream_config.publish_hz;
+    codec_config = stream_config.codec_config;
+    publish_every_frame = stream_config.publish_every_frame;
     // TODO is this too heavy to do every frame? maybe we need a dirty marker
     channel_configs = stream_config.channels;
     point_streams = collect_point_streams(workspace);

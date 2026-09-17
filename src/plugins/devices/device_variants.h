@@ -42,8 +42,8 @@ constexpr auto device_id_from_variant(const DeviceConfigurationVariant &v) {
 }
 
 constexpr auto device_label(const DeviceConfigurationVariant &v) {
-  return std::visit(
-      [](const auto &cfg) { return std::string_view(cfg.label.value()); }, v);
+  return std::visit([](const auto &cfg) { return std::string_view(cfg.label); },
+                    v);
 }
 
 // the operator list a device hosts, or nullptr for device types that can't

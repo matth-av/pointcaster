@@ -112,9 +112,8 @@ public:
     // initialise backends depending on what plugins are available
     _backends.instantiate(backend_plugin_manager, operator_name);
 
-    std::visit(
-        [this](const auto &c) { set_current_backend(c.backend.value()); },
-        config_variant());
+    std::visit([this](const auto &c) { set_current_backend(c.backend); },
+               config_variant());
   };
 
   // return 'input' unchanged to pass a frame straight through...
@@ -134,9 +133,7 @@ public:
   virtual void on_config_field_changed(std::string_view path = "") {
     if (path == "backend") {
       std::visit(
-          [this](const auto &config) {
-            set_current_backend(config.backend.value());
-          },
+          [this](const auto &config) { set_current_backend(config.backend); },
           config_variant());
     }
   }

@@ -15,7 +15,7 @@ namespace pc::devices {
 bool effective_session_enabled(const pc::WorkspaceConfiguration &config,
                                const pc::SessionConfiguration &session_config,
                                const std::string &node_id) {
-  const auto &disabled_nodes = session_config.disabled_devices.value();
+  const auto &disabled_nodes = session_config.disabled_devices;
   if (disabled_nodes.empty()) return true;
   if (disabled_nodes.contains(node_id)) return false;
 
@@ -24,15 +24,15 @@ bool effective_session_enabled(const pc::WorkspaceConfiguration &config,
 
   if (const int group_index = group_index_by_id(config, node_id);
       group_index >= 0) {
-    parent_id = config.device_groups[static_cast<size_t>(group_index)]
-                    .parent_id.value();
+    parent_id =
+        config.device_groups[static_cast<size_t>(group_index)].parent_id;
     found_node = true;
   } else {
     for (const auto &device_variant : config.devices) {
       std::visit(
           [&](const auto &device_config) {
             if (device_config.id == node_id) {
-              parent_id = device_config.parent_id.value();
+              parent_id = device_config.parent_id;
               found_node = true;
             }
           },
@@ -47,8 +47,8 @@ bool effective_session_enabled(const pc::WorkspaceConfiguration &config,
     if (disabled_nodes.contains(ancestor_id)) return false;
     const int group_index = group_index_by_id(config, ancestor_id);
     if (group_index < 0) break;
-    ancestor_id = config.device_groups[static_cast<size_t>(group_index)]
-                      .parent_id.value();
+    ancestor_id =
+        config.device_groups[static_cast<size_t>(group_index)].parent_id;
   }
   return true;
 }
@@ -84,14 +84,14 @@ pc::float4x4 effective_world_transform(const pc::WorkspaceConfiguration &config,
 
   if (const int group_index = group_index_by_id(config, node_id);
       group_index >= 0) {
-    parent = config.device_groups[size_t(group_index)].parent_id.value();
+    parent = config.device_groups[size_t(group_index)].parent_id;
     found = true;
   } else {
     for (const auto &device_variant : config.devices) {
       std::visit(
           [&](const auto &device_config) {
             if (device_config.id == node_id) {
-              parent = device_config.parent_id.value();
+              parent = device_config.parent_id;
               found = true;
             }
           },
@@ -106,10 +106,9 @@ pc::float4x4 effective_world_transform(const pc::WorkspaceConfiguration &config,
     const int group_index = group_index_by_id(config, p);
     if (group_index < 0) break;
     world = pc::multiply(
-        pc::to_float4x4(
-            config.device_groups[size_t(group_index)].transform.value()),
+        pc::to_float4x4(config.device_groups[size_t(group_index)].transform),
         world);
-    p = config.device_groups[size_t(group_index)].parent_id.value();
+    p = config.device_groups[size_t(group_index)].parent_id;
   }
   return world;
 }
@@ -137,17 +136,16 @@ std::string device_address(const pc::WorkspaceConfiguration &config,
       group_index >= 0) {
     const auto &group_config =
         config.device_groups[static_cast<size_t>(group_index)];
-    own_label = label_or_id(group_config.label.value(), group_config.id);
-    parent = group_config.parent_id.value();
+    own_label = label_or_id(group_config.label, group_config.id);
+    parent = group_config.parent_id;
     found = true;
   } else {
     for (const auto &device_variant : config.devices) {
       std::visit(
           [&](const auto &device_config) {
             if (device_config.id == device_id) {
-              own_label =
-                  label_or_id(device_config.label.value(), device_config.id);
-              parent = device_config.parent_id.value();
+              own_label = label_or_id(device_config.label, device_config.id);
+              parent = device_config.parent_id;
               found = true;
             }
           },
@@ -164,9 +162,8 @@ std::string device_address(const pc::WorkspaceConfiguration &config,
     if (group_index < 0) break;
     const auto &group_config =
         config.device_groups[static_cast<size_t>(group_index)];
-    ancestor_labels.push_back(
-        label_or_id(group_config.label.value(), group_config.id));
-    ancestor_id = group_config.parent_id.value();
+    ancestor_labels.push_back(label_or_id(group_config.label, group_config.id));
+    ancestor_id = group_config.parent_id;
   }
 
   std::string address;
@@ -191,7 +188,7 @@ device_ids_in_group(const pc::WorkspaceConfiguration &config,
           using T = std::decay_t<decltype(device_config)>;
           if constexpr (!std::same_as<T, DeviceGroupConfiguration>) {
             device_id = device_config.id;
-            parent_id = device_config.parent_id.value();
+            parent_id = device_config.parent_id;
           }
         },
         device_variant);
@@ -204,7 +201,7 @@ device_ids_in_group(const pc::WorkspaceConfiguration &config,
       }
       const int group_index = group_index_by_id(config, current_id);
       if (group_index < 0) break;
-      current_id = config.device_groups[size_t(group_index)].parent_id.value();
+      current_id = config.device_groups[size_t(group_index)].parent_id;
     }
   }
   return result;

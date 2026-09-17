@@ -8,7 +8,6 @@
 #include <point_streamer/point_streamer_config.h>
 #include <publishers/publishers_config.h>
 #include <receivers/osc/osc_receiver_config.h>
-#include <rfl/DefaultVal.hpp>
 #include <session/session_config.h>
 #include <set>
 #include <string>
@@ -19,21 +18,21 @@ namespace pc {
 // simulation state for the running application.
 struct WorkspaceConfiguration {
   std::string id;
-  rfl::DefaultVal<std::string> selectedSessionId;
-  rfl::DefaultVal<int> selectedDeviceIndex = 0;
+  std::string selectedSessionId;
+  int selectedDeviceIndex = 0;
   std::vector<SessionConfiguration> sessions{};
   std::vector<devices::DeviceConfigurationVariant> devices{};
   std::vector<devices::DeviceGroupConfiguration> device_groups;
-  rfl::DefaultVal<publishers::PublishersConfiguration> publishers;
-  rfl::DefaultVal<networking::PointStreamerConfiguration> point_streamer;
-  rfl::DefaultVal<receivers::OscReceiverConfiguration> osc_receiver;
+  publishers::PublishersConfiguration publishers;
+  networking::PointStreamerConfiguration point_streamer;
+  receivers::OscReceiverConfiguration osc_receiver;
 
   // config field paths that should be published
-  rfl::DefaultVal<std::set<std::string>> publish_paths;
-  rfl::DefaultVal<std::set<std::string>> push_paths;
+  std::set<std::string> publish_paths;
+  std::set<std::string> push_paths;
   // output stream paths that should be drawn in the 3d scene, kept apart from
   // publishing so a stream can be looked at without leaving the machine
-  rfl::DefaultVal<std::set<std::string>> render_paths;
+  std::set<std::string> render_paths;
 };
 
 bool load_workspace_from_file(WorkspaceConfiguration &config,

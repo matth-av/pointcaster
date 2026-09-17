@@ -57,11 +57,11 @@ void StreamChannelListModel::refresh() {
 
   if (_workspace) {
     std::lock_guard lock(_workspace->config_access);
-    const auto &stream_config = _workspace->config.point_streamer.value();
+    const auto &stream_config = _workspace->config.point_streamer;
 
     std::unordered_map<std::string, bool> enabled_overrides;
     for (const auto &channel : stream_config.channels)
-      enabled_overrides[channel.address] = channel.enabled.value();
+      enabled_overrides[channel.address] = channel.enabled;
 
     for (const auto &source :
          pc::networking::collect_point_streams(*_workspace)) {
@@ -89,11 +89,11 @@ bool StreamChannelListModel::setChannelEnabled(int index, bool enabled) {
   if (_workspace) {
     const std::string address = _channels[index].address.toStdString();
     std::lock_guard lock(_workspace->config_access);
-    auto &channels = _workspace->config.point_streamer.value().channels;
+    auto &channels = _workspace->config.point_streamer.channels;
     auto it = std::find_if(channels.begin(), channels.end(),
                            [&](const auto &c) { return c.address == address; });
     if (it != channels.end()) {
-      it->enabled.set(enabled);
+      it->enabled = enabled;
     } else {
       channels.push_back(pc::networking::StreamChannelConfiguration{
           .address = address,

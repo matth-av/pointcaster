@@ -54,8 +54,7 @@ PipelineFramePtr FringeRemovalOperator::process(PipelineFramePtr input) {
   // TODO is this sync on every process necessary?
   _camera.update_config(config.camera);
 
-  if (!config.remove_occluding_fringe.value() &&
-      !config.remove_canny_fringe.value()) {
+  if (!config.remove_occluding_fringe && !config.remove_canny_fringe) {
     return input;
   }
 
@@ -101,10 +100,10 @@ PipelineFramePtr FringeRemovalOperator::process(PipelineFramePtr input) {
     pcl::OrganizedEdgeFromRGB<pcl::PointXYZRGB, pcl::Label> edge_detector;
 
     edge_detector.setInputCloud(pcl_rgbd_cloud);
-    edge_detector.setDepthDisconThreshold(config.depth_threshold.value());
-    edge_detector.setMaxSearchNeighbors(config.max_search_neighbors.value());
-    edge_detector.setRGBCannyLowThreshold(config.canny_low.value());
-    edge_detector.setRGBCannyHighThreshold(config.canny_high.value());
+    edge_detector.setDepthDisconThreshold(config.depth_threshold);
+    edge_detector.setMaxSearchNeighbors(config.max_search_neighbors);
+    edge_detector.setRGBCannyLowThreshold(config.canny_low);
+    edge_detector.setRGBCannyHighThreshold(config.canny_high);
 
     {
       ProfilingZone edge_detector_zone("pcl::edge_detector::compute");
@@ -170,25 +169,25 @@ PipelineFramePtr FringeRemovalOperator::process(PipelineFramePtr input) {
       }
     };
 
-    if (config.remove_occluding_fringe.value()) {
+    if (config.remove_occluding_fringe) {
       ProfilingZone compute_occluding_zone("compute_occluding_mask");
 
       camera::FringeMaskOptions opts{
           .seed_label_bits = camera::EdgeOccluding | camera::EdgeNanBoundary,
-          .erosion_px = config.occluding_erosion_px.value(),
+          .erosion_px = config.occluding_erosion_px,
       };
       merge(
           camera::compute_fringe_mask(width, height, label_bits_buffer, opts));
     }
 
-    if (config.remove_canny_fringe.value()) {
+    if (config.remove_canny_fringe) {
       ProfilingZone compute_canny_zone("compute_canny_mask");
 
       camera::FringeMaskOptions opts{
           .seed_label_bits = camera::EdgeOccluding,
           .gate_label_bits = camera::EdgeRgbCanny,
-          .gate_proximity_px = config.canny_proximity_px.value(),
-          .erosion_px = config.canny_erosion_px.value(),
+          .gate_proximity_px = config.canny_proximity_px,
+          .erosion_px = config.canny_erosion_px,
       };
       merge(
           camera::compute_fringe_mask(width, height, label_bits_buffer, opts));
@@ -202,19 +201,19 @@ PipelineFramePtr FringeRemovalOperator::process(PipelineFramePtr input) {
 
     cv::Mat mask_img(height, width, CV_8UC1, drop_mask.data());
 
-    const int close_r = config.morph_close_radius.value();
+    const int close_r = config.morph_close_radius;
     if (close_r > 0) {
       auto kernel = cv::getStructuringElement(
           cv::MORPH_ELLIPSE, {close_r * 2 + 1, close_r * 2 + 1});
       cv::morphologyEx(mask_img, mask_img, cv::MORPH_CLOSE, kernel);
     }
 
-    const int blur = config.blur_radius.value();
+    const int blur = config.blur_radius;
     if (blur > 0) {
       const int k = blur * 2 + 1;
       cv::GaussianBlur(mask_img, mask_img, {k, k}, 0);
       cv::threshold(mask_img, mask_img,
-                    static_cast<double>(config.blur_threshold.value()), 255,
+                    static_cast<double>(config.blur_threshold), 255,
                     cv::THRESH_BINARY);
     }
   }
@@ -246,7 +245,7 @@ PipelineFramePtr FringeRemovalOperator::process(PipelineFramePtr input) {
   {
     ProfilingZone filter_pointcloud_zone("filter_cloud_by_mask");
     camera::filter_cloud_by_pixel_mask(input_frame, drop_mask, *output_cloud,
-                                       config.removal_depth_range.value());
+                                       config.removal_depth_range);
   }
   output_frame->cloud = std::move(output_cloud);
   return output_frame;

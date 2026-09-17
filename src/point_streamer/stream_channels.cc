@@ -22,7 +22,7 @@ std::vector<PointStream> collect_point_streams(Workspace &workspace) {
   {
     std::scoped_lock lock(workspace.sessions_access);
     for (const auto &session_config : workspace.config.sessions) {
-      const auto &label = session_config.label.value();
+      const auto &label = session_config.label;
       std::string address = !label.empty() ? label : session_config.id;
 
       std::shared_ptr<PointCloud> cloud;

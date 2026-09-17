@@ -17,12 +17,12 @@ namespace pc::devices {
 class OrbbecDevice;
 
 struct OrbbecDeviceConfiguration {
-  std::string id;                     // @hidden
-  std::string serial;                 // @disabled
-  rfl::DefaultVal<std::string> label; // @hidden
+  std::string id;     // @hidden
+  std::string serial; // @disabled
+  std::string label;  // @hidden
 
-  rfl::DefaultVal<std::string> parent_id; // @hidden
-  rfl::DefaultVal<int> order = 0;         // @hidden
+  std::string parent_id; // @hidden
+  int order = 0;         // @hidden
 
   // enumerations shared among sensor configuration types
 
@@ -49,15 +49,12 @@ struct OrbbecDeviceConfiguration {
   // configuration shapes and defaults
 
   struct RgbdSensorConfiguration {
-    rfl::DefaultVal<DepthMode> depth_mode = DepthMode::Narrow;
-    rfl::DefaultVal<AcquisitionMode> acquisition_mode = AcquisitionMode::XYZRGB;
-    rfl::DefaultVal<PointConversionMode> conversion_mode =
-        PointConversionMode::D2C;
-    rfl::DefaultVal<ColorResolution> color_resolution =
-        ColorResolution::HD_1280x720;
-    rfl::DefaultVal<DepthResolution> depth_resolution =
-        DepthResolution::NFOV_640x576;
-    rfl::DefaultVal<SyncMode> sync_mode = SyncMode::Standalone;
+    DepthMode depth_mode = DepthMode::Narrow;
+    AcquisitionMode acquisition_mode = AcquisitionMode::XYZRGB;
+    PointConversionMode conversion_mode = PointConversionMode::D2C;
+    ColorResolution color_resolution = ColorResolution::HD_1280x720;
+    DepthResolution depth_resolution = DepthResolution::NFOV_640x576;
+    SyncMode sync_mode = SyncMode::Standalone;
 
     // resolved from the stream profiles once the pipeline starts
     rfl::Skip<int> fps; // @disabled
@@ -66,13 +63,12 @@ struct OrbbecDeviceConfiguration {
   };
 
   struct LidarSensorConfiguration {
-    rfl::DefaultVal<uint32_t> scan_rate =
-        30; // @options(15, 20, 25, 30, 40) @suffix(Hz)
+    uint32_t scan_rate = 30; // @options(15, 20, 25, 30, 40) @suffix(Hz)
 
-    rfl::DefaultVal<Toggleable<radius>> maximum_distance = Toggleable<radius>{
+    Toggleable<radius> maximum_distance = Toggleable<radius>{
         .active = false, .value = radius{1500}}; // @minmax(50, 65535)
 
-    rfl::DefaultVal<ColorMapping> color_mapping = ColorMapping::LogIntensity;
+    ColorMapping color_mapping = ColorMapping::LogIntensity;
 
     using Tag = rfl::Literal<"lidar">;
   };
@@ -81,14 +77,14 @@ struct OrbbecDeviceConfiguration {
       rfl::TaggedUnion<"type", RgbdSensorConfiguration,
                        LidarSensorConfiguration>;
 
-  rfl::DefaultVal<SensorConfigurationVariant> sensor = {
-      RgbdSensorConfiguration{}};
+  SensorConfigurationVariant sensor = {RgbdSensorConfiguration{}};
 
-  rfl::DefaultVal<NetworkConfiguration> network; // @folded
-  rfl::DefaultVal<TransformConfiguration> transform;
-  rfl::DefaultVal<ColorTransformConfiguration> color; // @folded
+  NetworkConfiguration network; // @folded
+  TransformConfiguration transform;
+  ColorTransformConfiguration color; // @folded
 
-  rfl::DefaultVal<operators::ConcurrentOperatorPipelineConfiguration> operator_pipeline; // @hidden
+  operators::ConcurrentOperatorPipelineConfiguration
+      operator_pipeline;                                          // @hidden
   std::vector<operators::OperatorConfigurationVariant> operators; // @hidden
 
   using DeviceType = OrbbecDevice;

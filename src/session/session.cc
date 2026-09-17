@@ -27,19 +27,19 @@ Session::Session(Workspace &workspace, const SessionConfiguration &config)
 }
 
 void Session::update_config(const SessionConfiguration &config) {
-  const int prev_config_frame = _config.timeline.value().current_frame.value();
+  const int prev_config_frame = _config.timeline.current_frame;
   _config = config;
   sync_operators(_config.operators);
 
   {
-    const auto &tl = _config.timeline.value();
+    const auto &tl = _config.timeline;
     std::lock_guard lk(_playback_mutex);
-    _playback.looping = tl.looping.value();
-    _playback.fps = std::max(1, tl.fps.value());
-    _playback.start_frame = std::max(0, tl.start_frame.value());
-    _playback.end_frame = tl.end_frame.value();
-    _playback.explicit_length = tl.length.value();
-    const int new_config_frame = tl.current_frame.value();
+    _playback.looping = tl.looping;
+    _playback.fps = std::max(1, tl.fps);
+    _playback.start_frame = std::max(0, tl.start_frame);
+    _playback.end_frame = tl.end_frame;
+    _playback.explicit_length = tl.length;
+    const int new_config_frame = tl.current_frame;
     if (new_config_frame != prev_config_frame) {
       _playback.current_frame =
           std::max(_playback.start_frame, new_config_frame);
@@ -77,7 +77,8 @@ void Session::on_pipeline_output(operators::PipelineFramePtr output_frame) {
   if (!output_frame) return;
   auto cloud = output_frame->cloud;
   if (auto *cpu = _backends.cpu(); cloud && !cloud->empty() && cpu) {
-    auto buf = std::make_shared<std::vector<std::byte>>(cloud->size() * render_vertex_stride(*cloud));
+    auto buf = std::make_shared<std::vector<std::byte>>(
+        cloud->size() * render_vertex_stride(*cloud));
     cpu->pack_render_buffer(*cloud, *buf);
     _latest_render_data.store(std::move(buf), std::memory_order_release);
   }
@@ -185,32 +186,32 @@ void Session::scrub_devices(int session_frame) {
     std::visit(
         [&](auto &device_config) {
           if constexpr (requires {
-                          device_config.sequence.value().end_frame;
-                          device_config.sequence.value().start_frame;
-                          device_config.sequence.value().looping;
+                          device_config.sequence.end_frame;
+                          device_config.sequence.start_frame;
+                          device_config.sequence.looping;
                         }) {
-            auto &seq = device_config.sequence.value();
+            auto &seq = device_config.sequence;
             // session owns the clock; stop the device self-advancing
-            seq.playing.set(false);
+            seq.playing = false;
 
             // device's own in/out, clamped to what actually exists
-            const int dev_out_cfg = seq.end_frame.value();
+            const int dev_out_cfg = seq.end_frame;
             const int dev_out =
                 dev_out_cfg > -1
                     ? std::min(dev_out_cfg, sequence_frame_count - 1)
                     : sequence_frame_count - 1;
-            const int dev_in = std::clamp(seq.start_frame.value(), 0, dev_out);
+            const int dev_in = std::clamp(seq.start_frame, 0, dev_out);
             const int dev_len = dev_out - dev_in + 1; // >= 1
 
             int dev_frame;
-            if (seq.looping.value()) {
+            if (seq.looping) {
               // wrap within the device's own length, phase-locked to session
               dev_frame = dev_in + (session_offset % dev_len);
             } else {
               // play once then hold on the out point
               dev_frame = std::min(dev_in + session_offset, dev_out);
             }
-            seq.current_frame.set(dev_frame);
+            seq.current_frame = dev_frame;
           }
         },
         device->config());
@@ -304,7 +305,7 @@ void Session::update_loop(std::stop_token stop_token) {
           std::ranges::find(session_configs, id, &SessionConfiguration::id);
       // session removed: exit loop
       if (session_config == session_configs.end()) break;
-      update_hz = session_config->operator_pipeline.value().update_hz.value();
+      update_hz = session_config->operator_pipeline.update_hz;
 
       for (auto &device : _workspace->devices) {
         if (!device || device->is_discovery_instance()) continue;

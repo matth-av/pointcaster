@@ -40,7 +40,7 @@ std::string osc_address_from(std::string_view path) {
 class OscConnection {
 public:
   explicit OscConnection(const OscSenderConfiguration &config)
-      : _address(config.host.value(), config.port.value()) {
+      : _address(config.host, config.port) {
     pc::logger()->info("OSC sender publishing to '{}:{}'", _address.hostname(),
                        _address.port());
   }
@@ -67,8 +67,8 @@ public:
   }
 
   bool matches(const OscSenderConfiguration &config) const {
-    return _address.hostname() == config.host.value() &&
-           _address.port() == std::to_string(config.port.value());
+    return _address.hostname() == config.host &&
+           _address.port() == std::to_string(config.port);
   }
 
 private:
@@ -83,7 +83,7 @@ OscSender::~OscSender() = default;
 void OscSender::handle_config_change(
     std::string_view path, const OscSenderConfiguration &config_snapshot) {
 
-  if (!config_snapshot.enabled.value()) {
+  if (!config_snapshot.enabled) {
     _connection.reset();
     return;
   }
@@ -94,8 +94,7 @@ void OscSender::handle_config_change(
     _connection = std::make_unique<OscConnection>(config_snapshot);
   } catch (const lo::Error &) {
     pc::logger()->error("OSC sender failed to resolve '{}:{}'",
-                        config_snapshot.host.value(),
-                        config_snapshot.port.value());
+                        config_snapshot.host, config_snapshot.port);
   }
 }
 
@@ -105,9 +104,8 @@ void OscSender::handle_update(const std::string_view path,
 
   if (!_connection) return;
 
-  const auto &position_encoding = config_snapshot.position_encoding.value();
-  const auto max_cloud_points =
-      std::max(1, config_snapshot.max_cloud_points.value());
+  const auto &position_encoding = config_snapshot.position_encoding;
+  const auto max_cloud_points = std::max(1, config_snapshot.max_cloud_points);
 
   // positions can go out as either raw millimeter ints or floats as metres
   const auto push_back_position = [&](lo::Message &out, const position &p) {
@@ -215,7 +213,7 @@ void OscSender::handle_update(const std::string_view path,
 
 OscSenderConfiguration OscSender::config(Workspace &workspace) const {
   std::scoped_lock lock(workspace.config_access);
-  return workspace.config.publishers.value().osc.value();
+  return workspace.config.publishers.osc;
 }
 
 } // namespace pc::publishers

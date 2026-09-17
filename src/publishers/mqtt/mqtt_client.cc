@@ -56,7 +56,7 @@ constexpr auto connection_retry_interval = 5s;
 class MqttConnection {
 public:
   explicit MqttConnection(const MqttClientConfiguration &config)
-      : _client(config.broker_uri.value(), config.client_id.value()) {
+      : _client(config.broker_uri, config.client_id) {
     _options.set_connect_timeout(connect_timeout);
     _client.set_timeout(publish_timeout);
     try_connect();
@@ -95,8 +95,8 @@ public:
   void publish(const mqtt::const_message_ptr &msg) { _client.publish(msg); }
 
   bool matches(const MqttClientConfiguration &config) const {
-    return _client.get_server_uri() == config.broker_uri.value() &&
-           _client.get_client_id() == config.client_id.value();
+    return _client.get_server_uri() == config.broker_uri &&
+           _client.get_client_id() == config.client_id;
   }
 
 private:
@@ -112,9 +112,9 @@ MqttClient::~MqttClient() = default;
 
 void MqttClient::handle_config_change(
     std::string_view path, const MqttClientConfiguration &config_snapshot) {
-  _auto_reconnect = config_snapshot.auto_reconnect.value();
+  _auto_reconnect = config_snapshot.auto_reconnect;
 
-  if (!config_snapshot.enabled.value()) {
+  if (!config_snapshot.enabled) {
     _connection.reset();
     return;
   }
@@ -143,13 +143,10 @@ void MqttClient::handle_update(const std::string_view path,
   using SerializationFormat = MqttClientConfiguration::SerializationFormat;
   using EmptyMessageHandling = MqttClientConfiguration::EmptyMessageHandling;
 
-  const auto &serialize_as_structures =
-      config_snapshot.serialize_as_structures.value();
-  const auto &serialization_format =
-      config_snapshot.serialization_format.value();
-  const auto &send_retained = config_snapshot.send_retained.value();
-  const auto &empty_message_handling =
-      config_snapshot.empty_message_handling.value();
+  const auto &serialize_as_structures = config_snapshot.serialize_as_structures;
+  const auto &serialization_format = config_snapshot.serialization_format;
+  const auto &send_retained = config_snapshot.send_retained;
+  const auto &empty_message_handling = config_snapshot.empty_message_handling;
 
   const mqtt::string_ref topic(path.data(), path.size());
 
@@ -328,7 +325,7 @@ void MqttClient::handle_update(const std::string_view path,
 
 MqttClientConfiguration MqttClient::config(Workspace &workspace) const {
   std::scoped_lock lock(workspace.config_access);
-  return workspace.config.publishers.value().mqtt.value();
+  return workspace.config.publishers.mqtt;
 }
 
 } // namespace pc::publishers

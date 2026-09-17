@@ -22,11 +22,11 @@ moodycamel::ReaderWriterQueue<std::string> republish_paths;
 
 std::unique_ptr<zmq::socket_t>
 create_socket(const MessageStreamerConfiguration &config) {
-  if (!config.enabled.value()) {
+  if (!config.enabled) {
     return nullptr;
   }
-  const auto &interface_ip = config.interface_ip.value();
-  const auto port = config.port.value();
+  const auto &interface_ip = config.interface_ip;
+  const auto port = config.port;
   const auto address = std::format("tcp://{}:{}", interface_ip, port);
 
   std::unique_ptr<zmq::socket_t> socket_ptr;
@@ -90,7 +90,7 @@ MessageStreamer::MessageStreamer(Workspace &workspace)
 
 void MessageStreamer::tick(
     const MessageStreamerConfiguration &config_snapshot) {
-  if (!config_snapshot.enabled.value()) return;
+  if (!config_snapshot.enabled) return;
 
   // if we have no connected socket, we can attempt reconnections on each tick
   if (!_socket || _socket->handle() == nullptr) {
@@ -135,7 +135,7 @@ void MessageStreamer::handle_config_change(
 MessageStreamerConfiguration
 MessageStreamer::config(Workspace &workspace) const {
   std::scoped_lock lock(workspace.config_access);
-  return workspace.config.publishers.value().message_streamer.value();
+  return workspace.config.publishers.message_streamer;
 }
 
 void MessageStreamer::handle_update(const std::string_view path,
