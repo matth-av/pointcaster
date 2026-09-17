@@ -878,6 +878,9 @@ WorkspaceModel::WorkspaceModel(pc::Workspace *workspace, QObject *parent)
   _streamChannelModel->refresh();
 
   _logModel = new LogModel(this);
+
+  connect(_undoStack, &QUndoStack::cleanChanged, this,
+          [this](bool) { emit dirtyChanged(); });
 }
 
 WorkspaceModel::~WorkspaceModel() {
@@ -915,6 +918,7 @@ void WorkspaceModel::loadFromFile(const QUrl &file) {
         [this, file, local_path, config = std::move(loaded_config)]() mutable {
           setSaveFileUrl(file);
           applyWorkspaceConfigAndRebuild(std::move(config));
+          _undoStack->clear();
           AppSettings::instance()->setlastWorkspacePath(local_path);
         },
         Qt::QueuedConnection);
@@ -947,6 +951,7 @@ void WorkspaceModel::newWorkspace() {
                   .label = "session_1",
                   .camera = CameraConfiguration{.id = pc::uuid::word()}}}});
         setSelectedDeviceIndex(-1);
+        _undoStack->clear();
         emit newWorkspaceLoaded();
       },
       Qt::QueuedConnection);
@@ -972,6 +977,8 @@ void WorkspaceModel::save(bool update_last_session_path) {
   std::jthread([workspace_config = _workspace.config, local_path,
                 update_last_session_path, this] {
     save_workspace_to_file(workspace_config, local_path.toStdString());
+    QMetaObject::invokeMethod(
+        this, [this] { _undoStack->setClean(); }, Qt::QueuedConnection);
     if (update_last_session_path) {
       AppSettings::instance()->setlastWorkspacePath(local_path);
     }

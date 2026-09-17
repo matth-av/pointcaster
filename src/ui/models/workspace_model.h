@@ -48,6 +48,7 @@ class WorkspaceModel : public QObject {
   Q_OBJECT
 
   Q_PROPERTY(QUndoStack *undoStack READ undoStack CONSTANT)
+  Q_PROPERTY(bool dirty READ isDirty NOTIFY dirtyChanged)
 
   // Sessions
   Q_PROPERTY(QList<QObject *> sessionAdapters READ sessionAdapters NOTIFY
@@ -142,6 +143,7 @@ public:
   Q_INVOKABLE void registerPluginSettingsPages();
 
   QUndoStack *undoStack() const { return _undoStack; }
+  bool isDirty() const { return !_undoStack->isClean(); }
 
   // config registry subscriptions owned by this model. subscribeToRegistry
   // records what we registered so unsubscribeFromRegistry can drop our own
@@ -372,6 +374,8 @@ signals:
   void foldedPropertyPathsChanged();
 
   void saveFileUrlChanged();
+
+  void dirtyChanged();
 
   void uiStateChanged();
 
