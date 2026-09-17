@@ -15,6 +15,9 @@ using PointCloudCodec = CodecConfiguration::PointCloudCodec;
 
 namespace {
 
+// TODO maybe the packet header size should be taken deterministically at
+// compile time, maybe even with a struct, not just remembered here with a
+// comment...
 // timestamp, point count and codec id are written ahead of the body
 constexpr size_t packet_header_bytes =
     sizeof(uint64_t) + sizeof(uint64_t) + sizeof(uint8_t);
@@ -22,15 +25,64 @@ constexpr size_t packet_header_bytes =
 // what the reflected body will take, so the uncompressed path reserves once
 size_t attribute_bytes(const PointCloud &cloud) {
   size_t total = 0;
-  for (const auto &[_, storage] : cloud.attributes) {
+  for (const auto &[_, attribute] : cloud.attributes) {
     total += std::visit(
         [](const auto &values) {
           using ElementT = typename std::decay_t<decltype(values)>::value_type;
           return values.size() * sizeof(ElementT);
         },
-        storage);
+        attribute.storage);
   }
   return total;
+}
+
+bool holds_scalar(const PointCloud::Attribute &attribute) {
+  return std::visit(
+      [](const auto &values) {
+        using element = typename std::decay_t<decltype(values)>::value_type;
+        return std::is_arithmetic_v<element>;
+      },
+      attribute.storage);
+}
+
+// a scalar attribute's elements read back through its encoding
+std::vector<float> read_scalar_values(const PointCloud::Attribute &attribute) {
+  return std::visit(
+      [&](const auto &values) {
+        using element = typename std::decay_t<decltype(values)>::value_type;
+        std::vector<float> real_values;
+        if constexpr (std::is_arithmetic_v<element>) {
+          real_values.reserve(values.size());
+          for (const auto &value : values) {
+            real_values.push_back(
+                attribute.encoding.to_value(static_cast<float>(value)));
+          }
+        }
+        return real_values;
+      },
+      attribute.storage);
+}
+
+// the default value a point takes for an attribute its own cloud didn't already
+// carry... this is usually just the default constructor {} but point_scale
+// needs to be specialised
+template <typename T>
+T default_attribute_value(std::string_view name,
+                          const AttributeEncoding &encoding) {
+  if constexpr (std::is_same_v<T, float>) {
+    if (name == point_scale_attribute) {
+      return default_point_scale_millimetres().load(std::memory_order_relaxed);
+    }
+  } else if constexpr (std::is_integral_v<T>) {
+    if (name == point_scale_attribute) {
+      return quantise<T>(
+          default_point_scale_millimetres().load(std::memory_order_relaxed),
+          encoding);
+    }
+    // an offset encoding does not put a real zero at a raw zero
+    return quantise<T>(0.0f, encoding);
+  }
+  return T{};
 }
 
 } // namespace
@@ -106,6 +158,13 @@ auto PointCloud::decompress(std::span<const std::byte> buffer) -> PointCloud {
   }
 }
 
+std::vector<float>
+PointCloud::attribute_values_as_float(std::string_view name) const {
+  const auto it = attributes.find(name);
+  if (it == attributes.end()) return {};
+  return read_scalar_values(it->second);
+}
+
 void PointCloud::gather_attributes_into(
     PointCloud &destination, std::span<const uint32_t> indices) const {
   if (attributes.empty()) {
@@ -113,10 +172,10 @@ void PointCloud::gather_attributes_into(
     return;
   }
 
-  StringMap<attribute_storage> gathered;
+  StringMap<Attribute> gathered;
   gathered.reserve(attributes.size());
 
-  for (const auto &[name, storage] : attributes) {
+  for (const auto &[name, attribute] : attributes) {
     std::visit(
         [&](const auto &values) {
           using ElementT = typename std::decay_t<decltype(values)>::value_type;
@@ -125,9 +184,10 @@ void PointCloud::gather_attributes_into(
             const auto source_index = static_cast<size_t>(indices[i]);
             if (source_index < values.size()) kept[i] = values[source_index];
           }
-          gathered.emplace(name, std::move(kept));
+          gathered.emplace(name,
+                           Attribute{std::move(kept), attribute.encoding});
         },
-        storage);
+        attribute.storage);
   }
 
   destination.attributes = std::move(gathered);
@@ -136,18 +196,6 @@ void PointCloud::gather_attributes_into(
 std::atomic<float> &default_point_scale_millimetres() {
   static std::atomic<float> millimetres{2.5f};
   return millimetres;
-}
-
-// the default value a point takes for an attribute its own cloud didn't already
-// carry... this is usually just the default constructor {} but point_scale
-// needs to be specialised
-template <typename T> T default_attribute_value(std::string_view name) {
-  if constexpr (std::is_same_v<T, float>) {
-    if (name == point_scale_attribute) {
-      return default_point_scale_millimetres().load(std::memory_order_relaxed);
-    }
-  }
-  return T{};
 }
 
 PointCloud &operator+=(PointCloud &lhs, PointCloud const &rhs) {
@@ -168,43 +216,76 @@ PointCloud &operator+=(PointCloud &lhs, PointCloud const &rhs) {
   }
 
   // grow what the left cloud already holds, taking values from the right
-  // where it carries the same attribute at the same type
-  for (auto &[name, storage] : lhs.attributes) {
+  // where it carries the same attribute in the same storage and encoding
+  for (auto &[name, attribute] : lhs.attributes) {
+    const auto right = rhs.attributes.find(name);
+    const bool right_holds_any = right != rhs.attributes.end();
+
+    // the same storage read the same way appends without touching a value
+    const bool right_holds_same =
+        right_holds_any &&
+        right->second.storage.index() == attribute.storage.index() &&
+        right->second.encoding == attribute.encoding;
+
+    // two different storages or steps are both just promoted to floats atm.
+    // TODO how else would they consolidate into a single cloud?
+    // maybe all that's needed is to indicate to the user in the UI somewhere
+    // that this widening of data is occuring
+    const bool promote_to_float = right_holds_any && !right_holds_same &&
+                                  holds_scalar(attribute) &&
+                                  holds_scalar(right->second);
+
+    if (promote_to_float) {
+      const auto missing = default_attribute_value<float>(name, {});
+      auto merged = read_scalar_values(attribute);
+      merged.resize(original_size, missing);
+      const auto appended = read_scalar_values(right->second);
+      merged.insert(merged.end(), appended.begin(), appended.end());
+      merged.resize(original_size + appended_size, missing);
+
+      attribute.storage = std::move(merged);
+      attribute.encoding = {};
+      continue;
+    }
+
     std::visit(
         [&](auto &values) {
           using element = typename std::decay_t<decltype(values)>::value_type;
           values.resize(original_size);
 
-          const auto it = rhs.attributes.find(name);
           const auto *appended =
-              it == rhs.attributes.end()
-                  ? nullptr
-                  : std::get_if<std::vector<element>>(&it->second);
+              right_holds_same
+                  ? std::get_if<std::vector<element>>(&right->second.storage)
+                  : nullptr;
 
           if (appended && appended->size() == appended_size) {
             values.insert(values.end(), appended->begin(), appended->end());
           } else {
-            values.resize(original_size + appended_size,
-                          default_attribute_value<element>(name));
+            values.resize(
+                original_size + appended_size,
+                default_attribute_value<element>(name, attribute.encoding));
           }
         },
-        storage);
+        attribute.storage);
   }
 
   // then take on the attributes only the right cloud has, defaulted across
   // the points that were already here
-  for (const auto &[name, storage] : rhs.attributes) {
+  for (const auto &[name, attribute] : rhs.attributes) {
     if (lhs.attributes.contains(name)) continue;
     std::visit(
         [&](const auto &values) {
           using element = typename std::decay_t<decltype(values)>::value_type;
-          const auto missing = default_attribute_value<element>(name);
+          const auto missing =
+              default_attribute_value<element>(name, attribute.encoding);
           std::vector<element> merged(original_size, missing);
           merged.insert(merged.end(), values.begin(), values.end());
           merged.resize(original_size + appended_size, missing);
-          lhs.attributes.emplace(name, std::move(merged));
+          lhs.attributes.emplace(
+              name,
+              PointCloud::Attribute{std::move(merged), attribute.encoding});
         },
-        storage);
+        attribute.storage);
   }
 
   return lhs;

@@ -246,6 +246,7 @@ typedef enum {
   POINTRECEIVER_ATTRIBUTE_UINT8,
   POINTRECEIVER_ATTRIBUTE_UINT16,
   POINTRECEIVER_ATTRIBUTE_UINT32,
+  POINTRECEIVER_ATTRIBUTE_INT8,
   POINTRECEIVER_ATTRIBUTE_INT16,
   POINTRECEIVER_ATTRIBUTE_INT32
 } pointreceiver_attribute_type;
@@ -254,17 +255,18 @@ typedef enum {
  * @brief A point attribute
  *
  * The real value of an element is its raw value multiplied by
- * @c quantisation_step, which is 1.0 for an attribute stored as float. Both
- * @c name and @c data are borrowed from the context under the same rule as
- * the rest of the frame.
+ * @c quantisation_step plus @c quantisation_offset. An attribute stored as
+ * float uses a step of 1.0 and an offset of 0.0. Both @c name and @c data are
+ * borrowed from the context under the same rule as the rest of the frame.
  */
 typedef struct {
-  const char *name;         /**< Borrowed, NUL-terminated attribute name */
-  const void *data;         /**< Borrowed buffer of element_count elements */
-  size_t element_count;     /**< Element count, matching the frame's points */
-  float quantisation_step;  /**< Multiply a raw element by this */
-  uint32_t component_count; /**< Components per element; 1 for a scalar */
-  uint32_t stride;          /**< Bytes between consecutive elements */
+  const char *name;          /**< Borrowed, NUL-terminated attribute name */
+  const void *data;          /**< Borrowed buffer of element_count elements */
+  size_t element_count;      /**< Element count, matching the frame's points */
+  float quantisation_step;   /**< Multiply a raw element by this */
+  float quantisation_offset; /**< Add this to a raw element after multiplying */
+  uint32_t component_count;  /**< Components per element; 1 for a scalar */
+  uint32_t stride;           /**< Bytes between consecutive elements */
   pointreceiver_attribute_type element_type; /**< Storage type of an element */
 } pointreceiver_attribute;
 

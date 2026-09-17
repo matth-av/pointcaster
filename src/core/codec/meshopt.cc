@@ -67,9 +67,10 @@ bool decode_stream(void *destination, size_t element_count, size_t element_size,
   return result == 0;
 }
 
-struct EncodedAttribute {
+struct AttributeStream {
   std::string name;
   uint8_t alternative;
+  AttributeEncoding encoding;
   std::vector<std::byte> encoded;
 };
 
@@ -77,11 +78,11 @@ struct Payload {
   std::vector<std::byte> positions;
   std::vector<std::byte> colors;
   position_bounds bounds;
-  std::vector<EncodedAttribute> attributes;
+  std::vector<AttributeStream> attributes;
 };
 
 template <size_t Index>
-bool rebuild_attribute(PointCloud &cloud, const EncodedAttribute &attribute) {
+bool rebuild_attribute(PointCloud &cloud, const AttributeStream &attribute) {
   using storage =
       std::variant_alternative_t<Index, PointCloud::attribute_storage>;
   using ElementT = typename storage::value_type;
@@ -90,14 +91,16 @@ bool rebuild_attribute(PointCloud &cloud, const EncodedAttribute &attribute) {
                      attribute.encoded)) {
     return false;
   }
-  cloud.attributes.insert_or_assign(attribute.name, std::move(values));
+  cloud.attributes.insert_or_assign(
+      attribute.name,
+      PointCloud::Attribute{std::move(values), attribute.encoding});
   return true;
 }
 
 // tries the alternative the tag names, so a new alternative in
 // attribute_storage needs nothing here
 template <size_t... Indices>
-bool rebuild_attribute(PointCloud &cloud, const EncodedAttribute &attribute,
+bool rebuild_attribute(PointCloud &cloud, const AttributeStream &attribute,
                        std::index_sequence<Indices...>) {
   return ((attribute.alternative == Indices &&
            rebuild_attribute<Indices>(cloud, attribute)) ||
@@ -117,17 +120,18 @@ std::vector<std::byte> encode_meshopt(const PointCloud &cloud,
       encode_stream(cloud.colors.data(), cloud.size(), sizeof(color), level);
   payload.bounds = cloud.bounds;
 
-  for (const auto &[name, storage] : cloud.attributes) {
+  for (const auto &[name, attribute] : cloud.attributes) {
     std::visit(
         [&](const auto &values) {
           using element = typename std::decay_t<decltype(values)>::value_type;
           if (values.size() != cloud.size()) return;
           payload.attributes.push_back(
-              {name, static_cast<uint8_t>(storage.index()),
+              {name, static_cast<uint8_t>(attribute.storage.index()),
+               attribute.encoding,
                encode_stream(values.data(), values.size(), sizeof(element),
                              level)});
         },
-        storage);
+        attribute.storage);
   }
 
   std::vector<std::byte> buffer;

@@ -578,19 +578,25 @@ void transform_point_cloud(const void *owner, const PointCloud &input_cloud,
 
   const auto &point_scale = transform.point_scale.value();
   if (point_scale.active) {
-    auto point_scales = output_cloud.get<float>(point_scale_attribute);
-    if (point_scales.empty()) {
+    const auto existing = output_cloud.attributes.find(point_scale_attribute);
+    if (existing == output_cloud.attributes.end()) {
       const auto base =
           default_point_scale_millimetres().load(std::memory_order_relaxed) *
           point_scale.value;
-      point_scales = output_cloud.add<float>(point_scale_attribute);
+      auto point_scales = output_cloud.add<float>(point_scale_attribute);
       thrust::fill(thrust::tbb::par, point_scales.begin(), point_scales.end(),
                    base);
-    } else {
+    } else if (auto *point_scales =
+                   std::get_if<std::vector<float>>(&existing->second.storage)) {
       thrust::transform(
-          thrust::tbb::par, point_scales.begin(), point_scales.end(),
-          point_scales.begin(),
+          thrust::tbb::par, point_scales->begin(), point_scales->end(),
+          point_scales->begin(),
           [gain = point_scale.value](float value) { return value * gain; });
+    } else {
+      // if the point_scale is quantised, we can apply any gain directly to its
+      // encoding to save having to do an additional transform
+      existing->second.encoding.step *= point_scale.value;
+      existing->second.encoding.offset *= point_scale.value;
     }
   }
 }

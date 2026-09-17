@@ -17,17 +17,17 @@ using namespace draco;
 
 namespace {
 
-// how one element of an attribute vector is laid out for draco
-struct AttributeFormat {
-  DataType data_type;
-  int8_t component_count;
-};
+// the key for the array in a draco frame's metadata that holds an attribute's
+// encoding configuration if its precision has been lowered
+constexpr const char *attribute_encoding_key = "encoding";
 
 template <typename Scalar> constexpr DataType draco_scalar_type() {
   if constexpr (std::is_same_v<Scalar, float>) {
     return DataType::DT_FLOAT32;
   } else if constexpr (std::is_same_v<Scalar, uint8_t>) {
     return DataType::DT_UINT8;
+  } else if constexpr (std::is_same_v<Scalar, int8_t>) {
+    return DataType::DT_INT8;
   } else if constexpr (std::is_same_v<Scalar, uint16_t>) {
     return DataType::DT_UINT16;
   } else if constexpr (std::is_same_v<Scalar, uint32_t>) {
@@ -41,13 +41,14 @@ template <typename Scalar> constexpr DataType draco_scalar_type() {
   }
 }
 
+// how one element of an attribute vector is laid out for draco
+struct AttributeFormat {
+  DataType data_type;
+  int8_t component_count;
+};
+
 template <typename T> constexpr AttributeFormat draco_attribute_format() {
-  if constexpr (requires {
-                  typename T::storage_type;
-                  T::step_value;
-                }) {
-    return {draco_scalar_type<typename T::storage_type>(), 1};
-  } else if constexpr (std::is_arithmetic_v<T>) {
+  if constexpr (std::is_arithmetic_v<T>) {
     return {draco_scalar_type<T>(), 1};
   } else if constexpr (requires(T value) {
                          value.x;
@@ -77,7 +78,7 @@ std::vector<std::byte> encode_draco(const PointCloud &cloud,
       col_attribute_id, cloud.colors.data(), sizeof(color));
 
   // custom attributes go in as draco generic attributes.
-  for (const auto &[name, storage] : cloud.attributes) {
+  for (const auto &[name, attribute] : cloud.attributes) {
     std::visit(
         [&](const auto &values) {
           if (values.size() != cloud.size()) return;
@@ -90,10 +91,16 @@ std::vector<std::byte> encode_draco(const PointCloud &cloud,
               attribute_id, values.data(), sizeof(element_t));
           Metadata metadata;
           metadata.AddEntryString("name", name);
+          // only a quantised attribute needs to say how to read it back
+          if (!(attribute.encoding == AttributeEncoding{})) {
+            metadata.AddEntryDoubleArray(
+                attribute_encoding_key,
+                {attribute.encoding.step, attribute.encoding.offset});
+          }
           draco_builder.AddAttributeMetadata(
               attribute_id, std::make_unique<AttributeMetadata>(metadata));
         },
-        storage);
+        attribute.storage);
   }
 
   auto draco_point_cloud = draco_builder.Finalize(false);
@@ -178,6 +185,16 @@ PointCloud decode_draco(std::span<const std::byte> buffer, size_t point_count) {
     std::string name;
     if (!metadata || !metadata->GetEntryString("name", &name)) continue;
 
+    // an attribute encoded without one was already holding real values
+    AttributeEncoding encoding;
+    std::vector<double> encoded_encoding;
+    if (metadata->GetEntryDoubleArray(attribute_encoding_key,
+                                      &encoded_encoding) &&
+        encoded_encoding.size() == 2) {
+      encoding = {static_cast<float>(encoded_encoding[0]),
+                  static_cast<float>(encoded_encoding[1])};
+    }
+
     // the data type and component count together say which alternative was
     // encoded, so a new one in attribute_storage adds a line below
     const auto rebuild = [&]<typename T>(std::type_identity<T>) {
@@ -190,14 +207,19 @@ PointCloud decode_draco(std::span<const std::byte> buffer, size_t point_count) {
           reinterpret_cast<const T *>(draco_attribute->buffer()->data());
       point_cloud.attributes.insert_or_assign(
           name,
-          std::vector<T>(input_values_ptr, input_values_ptr + point_count));
+          PointCloud::Attribute{
+              std::vector<T>(input_values_ptr, input_values_ptr + point_count),
+              encoding});
       return true;
     };
 
     [[maybe_unused]] const bool rebuilt =
         rebuild(std::type_identity<float>{}) ||
-        rebuild(std::type_identity<scale>{}) ||
-        rebuild(std::type_identity<position>{});
+        rebuild(std::type_identity<position>{}) ||
+        rebuild(std::type_identity<uint8_t>{}) ||
+        rebuild(std::type_identity<uint16_t>{}) ||
+        rebuild(std::type_identity<int8_t>{}) ||
+        rebuild(std::type_identity<int16_t>{});
   }
 
   if (const auto *geometry_metadata = draco_point_cloud->GetMetadata()) {

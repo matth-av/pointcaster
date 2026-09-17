@@ -23,6 +23,7 @@ public enum PointreceiverAttributeType
     UInt8,
     UInt16,
     UInt32,
+    Int8,
     Int16,
     Int32
 }
@@ -30,8 +31,8 @@ public enum PointreceiverAttributeType
 // One named per-point attribute, mirroring pointreceiver_attribute
 //
 // ElementType is how the values are stored.
-// If ElementType is not a float, multiply the raw value by 
-// quantisation_step to get the real output
+// If ElementType is not a float, multiply the raw value by
+// quantisation_step and add quantisation_offset to get the real output
 [StructLayout(LayoutKind.Sequential)]
 public struct PointreceiverAttribute
 {
@@ -39,6 +40,7 @@ public struct PointreceiverAttribute
     public IntPtr data;
     public UIntPtr element_count; // size_t
     public float quantisation_step;
+    public float quantisation_offset;
     public uint component_count;
     public uint stride;
     public PointreceiverAttributeType element_type;

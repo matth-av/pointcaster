@@ -32,10 +32,20 @@ public:
 
   position_bounds bounds;
 
+  using attribute_storage =
+      std::variant<std::vector<position>, std::vector<float>,
+                   std::vector<uint8_t>, std::vector<uint16_t>,
+                   std::vector<int8_t>, std::vector<int16_t>>;
+
+  // An integer storage holds raw elements that mean what the encoding says
+  // they mean. A float storage reads back unchanged through the default.
+  struct Attribute {
+    attribute_storage storage;
+    AttributeEncoding encoding;
+  };
+
   // Arbitrary per-point attributes, keyed by name.
-  using attribute_storage = std::variant<std::vector<float>, std::vector<scale>,
-                                         std::vector<position>>;
-  StringMap<attribute_storage> attributes;
+  StringMap<Attribute> attributes;
 
   auto size() const { return positions.size(); }
   auto empty() const { return positions.empty(); }
@@ -43,18 +53,18 @@ public:
   void resize(std::size_t new_size) {
     positions.resize(new_size);
     colors.resize(new_size);
-    for (auto &[_, storage] : attributes) {
+    for (auto &[_, attribute] : attributes) {
       std::visit([new_size](auto &values) { values.resize(new_size); },
-                 storage);
+                 attribute.storage);
     }
   }
 
   void reserve(std::size_t new_capacity) {
     positions.reserve(new_capacity);
     colors.reserve(new_capacity);
-    for (auto &[_, storage] : attributes) {
+    for (auto &[_, attribute] : attributes) {
       std::visit([new_capacity](auto &values) { values.reserve(new_capacity); },
-                 storage);
+                 attribute.storage);
     }
   }
 
@@ -69,7 +79,7 @@ public:
   [[nodiscard]] std::span<T> get(std::string_view name) noexcept {
     auto it = attributes.find(name);
     if (it == attributes.end()) return {};
-    auto *values = std::get_if<std::vector<T>>(&it->second);
+    auto *values = std::get_if<std::vector<T>>(&it->second.storage);
     return values ? std::span<T>{*values} : std::span<T>{};
   }
 
@@ -78,10 +88,18 @@ public:
     return const_cast<PointCloud *>(this)->get<T>(name);
   }
 
-  // Creates or replaces an attribute buffer
+  // A scalar attribute's real values, whatever it is stored as. get<T>() stays
+  // the raw accessor. Empty for an attribute that isn't a scalar.
+  [[nodiscard]] POINTCASTER_CORE_EXPORT std::vector<float>
+  attribute_values_as_float(std::string_view name) const;
+
+  // Creates or replaces an attribute buffer, reading back unencoded until an
+  // encoding is set on it
   template <typename T>
   std::span<T> add(std::string_view name, std::size_t count) {
-    auto &values = attributes[name].emplace<std::vector<T>>(count);
+    auto &attribute = attributes[name];
+    attribute.encoding = {};
+    auto &values = attribute.storage.emplace<std::vector<T>>(count);
     return std::span<T>{values};
   }
 

@@ -8,6 +8,7 @@
 #include <core/logger/logger.h>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <iterator>
 #include <memory>
@@ -164,6 +165,8 @@ template <typename Scalar> constexpr pointreceiver_attribute_type wire_type() {
     return POINTRECEIVER_ATTRIBUTE_FLOAT32;
   } else if constexpr (std::is_same_v<Scalar, std::uint8_t>) {
     return POINTRECEIVER_ATTRIBUTE_UINT8;
+  } else if constexpr (std::is_same_v<Scalar, std::int8_t>) {
+    return POINTRECEIVER_ATTRIBUTE_INT8;
   } else if constexpr (std::is_same_v<Scalar, std::uint16_t>) {
     return POINTRECEIVER_ATTRIBUTE_UINT16;
   } else if constexpr (std::is_same_v<Scalar, std::uint32_t>) {
@@ -657,30 +660,24 @@ pointreceiver_status pointreceiver_dequeue_point_cloud(
     attributes.clear();
     attributes.reserve(cloud->attributes.size());
 
-    for (const auto &[name, storage] : cloud->attributes) {
+    for (const auto &[name, attribute] : cloud->attributes) {
+      // a float attribute keeps the default identity step and offset
+      const auto &encoding = attribute.encoding;
       std::visit(
           [&](const auto &values) {
             using element = typename std::decay_t<decltype(values)>::value_type;
 
-            pointreceiver_attribute attribute{
+            pointreceiver_attribute descriptor{
                 .name = name.c_str(),
                 .data = values.data(),
                 .element_count = values.size(),
-                .quantisation_step = 1.0f,
+                .quantisation_step = encoding.step,
+                .quantisation_offset = encoding.offset,
                 .component_count = 1,
                 .stride = static_cast<uint32_t>(sizeof(element))};
 
-            if constexpr (requires {
-                            typename element::storage_type;
-                            element::step_value;
-                          }) {
-              // a real value quantised into an integer, as basic_scale does
-              attribute.element_type =
-                  wire_type<typename element::storage_type>();
-              attribute.quantisation_step = element::step_value;
-
-            } else if constexpr (std::is_arithmetic_v<element>) {
-              attribute.element_type = wire_type<element>();
+            if constexpr (std::is_arithmetic_v<element>) {
+              descriptor.element_type = wire_type<element>();
 
             } else if constexpr (requires(element value) {
                                    value.x;
@@ -688,16 +685,16 @@ pointreceiver_status pointreceiver_dequeue_point_cloud(
                                  }) {
               // vectors like float3, int2 etc.
               using component = decltype(element::x);
-              attribute.element_type = wire_type<component>();
-              attribute.component_count =
+              descriptor.element_type = wire_type<component>();
+              descriptor.component_count =
                   static_cast<uint32_t>(sizeof(element) / sizeof(component));
             } else {
               static_assert(false, "attribute element has no description");
             }
 
-            attributes.push_back(attribute);
+            attributes.push_back(descriptor);
           },
-          storage);
+          attribute.storage);
     }
 
     std::ranges::sort(attributes, {}, [](const auto &attribute) {
@@ -748,6 +745,15 @@ pointreceiver_attribute_copy_floats(const pointreceiver_attribute *attribute,
 
   const auto *bytes = static_cast<const std::byte *>(attribute->data);
   const auto step = attribute->quantisation_step;
+  const auto offset = attribute->quantisation_offset;
+
+  // an unquantised float attribute can be copied raw without encoding
+  if (attribute->element_type == POINTRECEIVER_ATTRIBUTE_FLOAT32 &&
+      step == 1.0f && offset == 0.0f &&
+      attribute->stride == sizeof(float) * component_count) {
+    std::memcpy(out, bytes, value_count * sizeof(float));
+    return POINTRECEIVER_OK;
+  }
 
   const auto copy_as = [&]<typename Scalar>(std::type_identity<Scalar>) {
     for (size_t i = 0; i < attribute->element_count; i++) {
@@ -755,7 +761,7 @@ pointreceiver_attribute_copy_floats(const pointreceiver_attribute *attribute,
           reinterpret_cast<const Scalar *>(bytes + i * attribute->stride);
       for (size_t component = 0; component < component_count; component++) {
         out[i * component_count + component] =
-            static_cast<float>(element[component]) * step;
+            static_cast<float>(element[component]) * step + offset;
       }
     }
   };
@@ -766,6 +772,9 @@ pointreceiver_attribute_copy_floats(const pointreceiver_attribute *attribute,
     break;
   case POINTRECEIVER_ATTRIBUTE_UINT8:
     copy_as(std::type_identity<std::uint8_t>{});
+    break;
+  case POINTRECEIVER_ATTRIBUTE_INT8:
+    copy_as(std::type_identity<std::int8_t>{});
     break;
   case POINTRECEIVER_ATTRIBUTE_UINT16:
     copy_as(std::type_identity<std::uint16_t>{});

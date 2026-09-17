@@ -129,19 +129,25 @@ void transform_from(F &&get_point, size_t point_count, PointCloud &output_cloud,
 
   const auto &point_scale = transform.point_scale.value();
   if (point_scale.active) {
-    auto point_scales = output_cloud.get<float>(point_scale_attribute);
-    if (point_scales.empty()) {
+    const auto existing = output_cloud.attributes.find(point_scale_attribute);
+    if (existing == output_cloud.attributes.end()) {
       const auto base =
           default_point_scale_millimetres().load(std::memory_order_relaxed) *
           point_scale.value;
-      point_scales = output_cloud.add<float>(point_scale_attribute);
+      auto point_scales = output_cloud.add<float>(point_scale_attribute);
       std::fill(std::execution::par_unseq, point_scales.begin(),
                 point_scales.end(), base);
-    } else {
+    } else if (auto *point_scales =
+                   std::get_if<std::vector<float>>(&existing->second.storage)) {
       std::transform(
-          std::execution::par_unseq, point_scales.begin(), point_scales.end(),
-          point_scales.begin(),
+          std::execution::par_unseq, point_scales->begin(), point_scales->end(),
+          point_scales->begin(),
           [gain = point_scale.value](float value) { return value * gain; });
+    } else {
+      // a quantised scale takes the gain on its encoding rather than on every
+      // raw element, which is exact and costs nothing per point
+      existing->second.encoding.step *= point_scale.value;
+      existing->second.encoding.offset *= point_scale.value;
     }
   }
 }
@@ -301,20 +307,45 @@ void CpuBackend::pack_render_buffer(const PointCloud &cloud,
 
   const auto count = cloud.size();
   const auto stride = render_vertex_stride(cloud);
-  const auto point_scales = cloud.get<float>(point_scale_attribute);
   const auto indices = std::views::iota(size_t{0}, count);
   auto *out_bytes = reinterpret_cast<char *>(output.data());
 
-  std::for_each(
-      std::execution::par_unseq, indices.begin(), indices.end(), [&](size_t i) {
-        std::memcpy(out_bytes + i * stride, &cloud.positions[i], 8);
-        std::memcpy(out_bytes + i * stride + 8, &cloud.colors[i], 4);
-        float idx = static_cast<float>(i);
-        std::memcpy(out_bytes + i * stride + 12, &idx, 4);
-        if (i < point_scales.size()) {
-          std::memcpy(out_bytes + i * stride + 16, &point_scales[i], 4);
+  const auto pack_each_point = [&](auto &&write_scale) {
+    std::for_each(std::execution::par_unseq, indices.begin(), indices.end(),
+                  [&](size_t i) {
+                    std::memcpy(out_bytes + i * stride, &cloud.positions[i], 8);
+                    std::memcpy(out_bytes + i * stride + 8, &cloud.colors[i],
+                                4);
+                    float idx = static_cast<float>(i);
+                    std::memcpy(out_bytes + i * stride + 12, &idx, 4);
+                    write_scale(i);
+                  });
+  };
+
+  const auto point_scale = cloud.attributes.find(point_scale_attribute);
+  if (point_scale == cloud.attributes.end()) {
+    pack_each_point([](size_t) {});
+    return;
+  }
+
+  // the render vertex is always float32, so a quantised scale reads back
+  // through its encoding as it is packed
+  std::visit(
+      [&](const auto &scales) {
+        using element = typename std::decay_t<decltype(scales)>::value_type;
+        if constexpr (std::is_arithmetic_v<element>) {
+          const auto encoding = point_scale->second.encoding;
+          pack_each_point([&](size_t i) {
+            if (i >= scales.size()) return;
+            const float scale =
+                encoding.to_value(static_cast<float>(scales[i]));
+            std::memcpy(out_bytes + i * stride + 16, &scale, 4);
+          });
+        } else {
+          pack_each_point([](size_t) {});
         }
-      });
+      },
+      point_scale->second.storage);
 };
 
 void CpuBackend::project_frame(const PointCloud &cloud,
