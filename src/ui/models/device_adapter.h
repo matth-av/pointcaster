@@ -20,8 +20,8 @@
 class DeviceAdapter : public ConfigAdapter, public PointCloudAdapter {
   Q_OBJECT
 
-  Q_PROPERTY(pc::ui::WorkspaceDeviceStatus status READ status NOTIFY
-                 statusChanged)
+  Q_PROPERTY(
+      pc::ui::WorkspaceDeviceStatus status READ status NOTIFY statusChanged)
 
   Q_PROPERTY(QList<OperatorAdapter *> operatorAdapters READ operatorAdapters
                  NOTIFY operatorAdaptersChanged)
