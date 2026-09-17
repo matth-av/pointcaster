@@ -75,7 +75,8 @@ int main(int argc, char *argv[]) {
       !app_settings->lastWorkspacePath().isEmpty()) {
     const auto last_workspace_path =
         app_settings->lastWorkspacePath().toStdString();
-    if (load_workspace_from_file(workspace_config, last_workspace_path)) {
+    if (load_workspace_from_file(workspace_config, last_workspace_path,
+                                 app_settings->loadMalformedWorkspaces())) {
       loaded_workspace_path = last_workspace_path;
     };
   }

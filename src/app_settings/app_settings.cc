@@ -31,6 +31,8 @@ AppSettings::AppSettings(QObject *parent)
   m_restoreLastWorkspace =
       m_settings.value("restoreLastWorkspace", true).toBool();
   m_lastWorkspacePath = m_settings.value("lastWorkspacePath", "").toString();
+  m_loadMalformedWorkspaces =
+      m_settings.value("loadMalformedWorkspaces", true).toBool();
 
   // Store as string in QSettings, e.g. "debug", "info", ...
   const auto logLevelText =
@@ -352,6 +354,25 @@ void AppSettings::setlastWorkspacePath(const QString &value) {
   m_lastWorkspacePath = value;
   write("lastWorkspacePath", m_lastWorkspacePath);
   emit lastWorkspacePathChanged();
+}
+
+bool AppSettings::loadMalformedWorkspaces() const {
+  return m_loadMalformedWorkspaces;
+}
+
+void AppSettings::setLoadMalformedWorkspaces(bool value) {
+  if (value == m_loadMalformedWorkspaces) return;
+
+  if (!onObjectThread(this)) {
+    QMetaObject::invokeMethod(
+        this, [this, value] { setLoadMalformedWorkspaces(value); },
+        Qt::QueuedConnection);
+    return;
+  }
+
+  m_loadMalformedWorkspaces = value;
+  write("loadMalformedWorkspaces", m_loadMalformedWorkspaces);
+  emit loadMalformedWorkspacesChanged();
 }
 
 bool AppSettings::enablePrometheusMetrics() const {

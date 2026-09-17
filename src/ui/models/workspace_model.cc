@@ -910,9 +910,12 @@ void WorkspaceModel::loadFromFile(const QUrl &file) {
   const QString local_path = file.toLocalFile();
   if (local_path.isEmpty()) return;
 
-  std::jthread([&, local_path]() mutable {
+  const bool load_malformed =
+      AppSettings::instance()->loadMalformedWorkspaces();
+  std::jthread([&, local_path, load_malformed]() mutable {
     pc::WorkspaceConfiguration loaded_config;
-    pc::load_workspace_from_file(loaded_config, local_path.toStdString());
+    pc::load_workspace_from_file(loaded_config, local_path.toStdString(),
+                                 load_malformed);
     QMetaObject::invokeMethod(
         this,
         [this, file, local_path, config = std::move(loaded_config)]() mutable {

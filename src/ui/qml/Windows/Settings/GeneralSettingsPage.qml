@@ -34,6 +34,15 @@ SettingsPage {
                 Layout.maximumWidth: Math.round(260 * Scaling.uiScale)
             }
         }
+
+        SettingsRow {
+            label: "Attempt to load malformed workspace files"
+
+            CheckBox {
+                checked: AppSettings.loadMalformedWorkspaces
+                onToggled: AppSettings.loadMalformedWorkspaces = checked
+            }
+        }
     }
 
 

@@ -26,6 +26,9 @@ class APP_SETTINGS_API AppSettings final : public QObject {
                  setrestoreLastWorkspace NOTIFY restoreLastWorkspaceChanged)
   Q_PROPERTY(QString lastWorkspacePath READ lastWorkspacePath WRITE
                  setlastWorkspacePath NOTIFY lastWorkspacePathChanged)
+  Q_PROPERTY(
+      bool loadMalformedWorkspaces READ loadMalformedWorkspaces WRITE
+          setLoadMalformedWorkspaces NOTIFY loadMalformedWorkspacesChanged)
 
   Q_PROPERTY(
       LogLevel logLevel READ logLevel WRITE setLogLevel NOTIFY logLevelChanged)
@@ -71,6 +74,9 @@ public:
 
   QString lastWorkspacePath() const;
   void setlastWorkspacePath(const QString &value);
+
+  bool loadMalformedWorkspaces() const;
+  void setLoadMalformedWorkspaces(bool value);
 
   enum class LogLevel : int {
     Trace = static_cast<int>(spdlog::level::trace),
@@ -145,6 +151,7 @@ public:
 signals:
   void restoreLastWorkspaceChanged();
   void lastWorkspacePathChanged();
+  void loadMalformedWorkspacesChanged();
 
   void logLevelChanged();
   void logToFileChanged();
@@ -182,6 +189,7 @@ private:
 
   bool m_restoreLastWorkspace = true;
   QString m_lastWorkspacePath;
+  bool m_loadMalformedWorkspaces = true;
 
   LogLevel m_logLevel = LogLevel::Info;
   bool m_logToFile = true;

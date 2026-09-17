@@ -37,7 +37,8 @@ struct WorkspaceConfiguration {
 };
 
 bool load_workspace_from_file(WorkspaceConfiguration &config,
-                              const std::string &file_path);
+                              const std::string &file_path,
+                              bool load_malformed);
 
 void save_workspace_to_file(const WorkspaceConfiguration &config,
                             const std::string &file_path);

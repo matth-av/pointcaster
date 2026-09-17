@@ -7,14 +7,14 @@
 
 namespace pc {
 
-// we wrap our workspace configuration structure in a file struct
-// so it gets serialized with a top-level "[workspace]" root element
-struct WorkspaceFile {
-  WorkspaceConfiguration workspace;
-};
+// the workspace configuration gets serialized as a named
+// top-level element
+using WorkspaceFile =
+    rfl::NamedTuple<rfl::Field<"workspace", WorkspaceConfiguration>>;
 
 bool load_workspace_from_file(WorkspaceConfiguration &config,
-                              const std::string &file_path) {
+                              const std::string &file_path,
+                              bool load_malformed) {
   std::ifstream file(file_path, std::ios::binary);
   if (!file) {
     pc::logger()->error("Could not open '{}'", file_path);
@@ -23,21 +23,38 @@ bool load_workspace_from_file(WorkspaceConfiguration &config,
   }
   const std::string yaml_string{std::istreambuf_iterator<char>(file),
                                 std::istreambuf_iterator<char>()};
-  try {
-    config = rfl::yaml::read<WorkspaceFile, rfl::AddTagsToVariants,
-                             rfl::SnakeCaseToCamelCase>(yaml_string)
-                 .value()
-                 .workspace;
-    pc::logger()->info("Loaded configuration from '{}'", file_path);
-    pc::logger()->trace(
-        "Loaded Workspace:\n{}",
-        rfl::yaml::write<rfl::AddTagsToVariants, rfl::SnakeCaseToCamelCase>(
-            WorkspaceFile{.workspace = config}));
-  } catch (const std::exception &e) {
-    pc::logger()->error("Failed to parse '{}': {}", file_path, e.what());
+
+  auto read_result =
+      rfl::yaml::read<WorkspaceFile, rfl::AddTagsToVariants,
+                      rfl::SnakeCaseToCamelCase, rfl::DefaultIfMissing,
+                      rfl::NoExtraFields>(yaml_string);
+
+  if (!read_result && load_malformed) {
+    // still attempt to load the workspace file, just log the errors
+    const std::string error_msg = read_result.error().what();
+    read_result =
+        rfl::yaml::read<WorkspaceFile, rfl::AddTagsToVariants,
+                        rfl::SnakeCaseToCamelCase, rfl::DefaultIfMissing>(
+            yaml_string);
+    if (read_result) {
+      pc::logger()->error("Loaded '{}' with error:", file_path);
+      pc::logger()->error(error_msg);
+    }
+  }
+
+  if (!read_result) {
+    pc::logger()->error("Failed to parse '{}': {}", file_path,
+                        read_result.error().what());
     config = WorkspaceConfiguration{};
     return false;
   }
+
+  config = std::move(read_result.value().get<"workspace">());
+  pc::logger()->info("Loaded configuration from '{}'", file_path);
+  pc::logger()->trace(
+      "Loaded Workspace:\n{}",
+      rfl::yaml::write<rfl::AddTagsToVariants, rfl::SnakeCaseToCamelCase>(
+          WorkspaceFile(config)));
   return true;
 }
 
@@ -46,7 +63,7 @@ void save_workspace_to_file(const WorkspaceConfiguration &config,
   try {
     const auto yaml_string =
         rfl::yaml::write<rfl::AddTagsToVariants, rfl::SnakeCaseToCamelCase>(
-            WorkspaceFile{.workspace = config});
+            WorkspaceFile(config));
     std::ofstream(file_path) << yaml_string;
     pc::logger()->info("Saved workspace file to '{}'", file_path);
   } catch (const std::exception &e) {
