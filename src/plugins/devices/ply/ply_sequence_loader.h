@@ -17,10 +17,13 @@ namespace pc::devices::ply {
 class PlySequenceLoader
     : public std::enable_shared_from_this<PlySequenceLoader> {
 public:
+  using AttributeTable = std::vector<AttributeConfiguration>;
+
   struct Config {
     size_t buffer_capacity = 60;
     size_t prefetch_ahead = 30;
     PositionUnits position_units = PositionUnits::Automatic;
+    AttributeTable attributes;
   };
 
   bool open(const std::filesystem::path &directory, const Config &config);
@@ -34,6 +37,8 @@ public:
   void set_capacity(size_t buffer_capacity, size_t prefetch_ahead);
 
   void set_position_units(PositionUnits units);
+
+  void set_attributes(const AttributeTable &attributes);
 
   // file info for the first frame of a sequence
   const FileInfo &file_info() const { return _file_info; }
@@ -56,6 +61,7 @@ private:
   std::atomic<size_t> _loop_start{0};
   std::atomic<size_t> _loop_end{std::numeric_limits<size_t>::max()};
   std::atomic<PositionUnits> _position_units{PositionUnits::Automatic};
+  std::atomic<std::shared_ptr<const AttributeTable>> _attributes;
   std::atomic<size_t> _prefetch_ahead{0};
 
   std::shared_ptr<PointCloud> load_into_slot(size_t frame, size_t generation);

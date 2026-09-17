@@ -63,10 +63,18 @@ public:
   bool is_sequence() const override { return _sequence_loader != nullptr; }
   size_t frame_count() const override;
 
+  // what the loaded file's header declared, whether it came from a single file
+  // or the first frame of a sequence. the attribute rows in the ui are built
+  // from this
+  ply::FileInfo file_info() const;
+
+  ImportedAttributes imported_attributes() const override;
+
 private:
   DeviceStatus _status = DeviceStatus::Unloaded;
 
   std::string _loaded_file_path{};
+  ply::FileInfo _file_info;
   std::shared_ptr<ply::PlySequenceLoader> _sequence_loader;
   float _frame_accumulator = 0.f;
   int _current_frame = 0;
@@ -78,7 +86,7 @@ private:
 
   // TODO change this to a device-global or workspace-global timer thread
   std::jthread _tick_thread;
-  std::mutex _device_mutex;
+  mutable std::mutex _device_mutex;
 
   bool load_directory(const std::filesystem::path &dir);
 

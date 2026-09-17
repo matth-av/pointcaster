@@ -9,8 +9,10 @@
 #include <cstring>
 #include <miniply.h>
 #include <oneapi/tbb/parallel_for.h>
+#include <ranges>
 #include <span>
 #include <type_traits>
+#include <utility>
 
 namespace pc::devices::ply {
 
@@ -340,6 +342,31 @@ read_ascii(miniply::PLYReader &reader, const VertexLayout &layout,
   return cloud;
 }
 
+void quantise_attribute(PointCloud &cloud, std::string_view name,
+                        const AttributeConfiguration &configuration) {
+  visit_raw_type(configuration, [&](auto raw_type) {
+    using RawType = typename decltype(raw_type)::type;
+
+    const auto values = cloud.get<float>(name);
+    if (values.empty()) return;
+
+    const auto encoding = attribute_encoding_for_range<RawType>(
+        configuration.range_min.value(), configuration.range_max.value());
+
+    std::vector<RawType> raw(values.size());
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, values.size()),
+                      [&](const tbb::blocked_range<size_t> &range) {
+                        for (size_t i = range.begin(); i < range.end(); i++) {
+                          raw[i] = quantise<RawType>(values[i], encoding);
+                        }
+                      });
+
+    auto &attribute = cloud.attributes[name];
+    attribute.storage = std::move(raw);
+    attribute.encoding = encoding;
+  });
+}
+
 } // namespace
 
 std::optional<FileInfo> scan_file_info(const std::string &path) {
@@ -364,12 +391,13 @@ std::optional<FileInfo> scan_file_info(const std::string &path) {
   return info;
 }
 
-std::shared_ptr<PointCloud> read_point_cloud(const std::string &path,
-                                             PositionUnits units) {
+std::shared_ptr<PointCloud>
+read_point_cloud(const std::string &path, PositionUnits units,
+                 std::span<const AttributeConfiguration> attributes) {
   miniply::PLYReader reader(path.c_str());
   if (!seek_vertex_element(reader, path)) return nullptr;
 
-  const auto layout = layout_of(reader);
+  auto layout = layout_of(reader);
   if (!layout.has_position) {
     pc::logger()->error("PLY vertex element is missing x, y or z: {}", path);
     return nullptr;
@@ -379,15 +407,36 @@ std::shared_ptr<PointCloud> read_point_cloud(const std::string &path,
   const auto position_scale = position_scale_for(
       units, is_floating_point(element->properties[layout.position[0]].type));
 
+  // a property is only read once it has a target, and the first property to
+  // claim a target is the one read into it
+  std::vector<uint32_t> targeted_properties;
+  std::vector<const AttributeConfiguration *> targeted;
+  for (const auto index : layout.attributes) {
+    const auto configuration =
+        std::ranges::find_if(attributes, [&](const auto &candidate) {
+          return candidate.name == element->properties[index].name;
+        });
+    if (configuration == attributes.end()) continue;
+    const auto target = configuration->target.value();
+    if (target == AttributeTarget::None) continue;
+    if (std::ranges::any_of(targeted, [&](const auto *claimed) {
+          return claimed->target.value() == target;
+        })) {
+      continue;
+    }
+    targeted_properties.push_back(index);
+    targeted.push_back(&*configuration);
+  }
+  layout.attributes = std::move(targeted_properties);
+
   auto cloud = std::make_shared<PointCloud>();
   cloud->resize(element->count);
 
   std::vector<std::span<float>> attribute_values;
-  attribute_values.reserve(layout.attributes.size());
-  for (const auto index : layout.attributes) {
-    const std::string_view name = element->properties[index].name;
+  attribute_values.reserve(targeted.size());
+  for (const auto *configuration : targeted) {
     attribute_values.push_back(
-        cloud->add<float>(name == "pscale" ? point_scale_attribute : name));
+        cloud->add<float>(cloud_attribute_name(configuration->target.value())));
   }
 
   if (element->count == 0) return cloud;
@@ -399,12 +448,20 @@ std::shared_ptr<PointCloud> read_point_cloud(const std::string &path,
                         attribute_values);
   if (!filled) return nullptr;
 
-  // a point scale is a world space radius, so it takes units in 'position'
-  // space (mm)
-  if (position_scale != 1.0f) {
-    for (auto &value : filled->get<float>(point_scale_attribute)) {
-      value *= position_scale;
+  for (const auto *configuration : targeted) {
+    const auto target = configuration->target.value();
+    const auto cloud_name = cloud_attribute_name(target);
+
+    // a point scale is a world space radius, so it takes units in 'position'
+    // space (mm)
+    if (target == AttributeTarget::PointScale && position_scale != 1.0f) {
+      for (auto &value : filled->get<float>(cloud_name)) {
+        value *= position_scale;
+      }
     }
+
+    // any attribute encoding/quantisation to different precision:
+    quantise_attribute(*filled, cloud_name, *configuration);
   }
   return filled;
 }

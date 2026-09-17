@@ -9,6 +9,8 @@ namespace pc::devices::ply {
 bool PlySequenceLoader::open(const std::filesystem::path &directory,
                              const Config &config) {
   _position_units.store(config.position_units, std::memory_order_relaxed);
+  _attributes.store(std::make_shared<const AttributeTable>(config.attributes),
+                    std::memory_order_relaxed);
   _prefetch_ahead.store(config.prefetch_ahead, std::memory_order_relaxed);
   _file_paths.clear();
   _file_info = {};
@@ -72,8 +74,11 @@ void PlySequenceLoader::invalidate() {
 
 std::shared_ptr<PointCloud>
 PlySequenceLoader::load_into_slot(size_t frame, size_t generation) {
+  const auto attributes = _attributes.load(std::memory_order_relaxed);
   auto cloud = read_point_cloud(
-      _file_paths[frame], _position_units.load(std::memory_order_relaxed));
+      _file_paths[frame], _position_units.load(std::memory_order_relaxed),
+      attributes ? std::span<const AttributeConfiguration>{*attributes}
+                 : std::span<const AttributeConfiguration>{});
 
   std::unique_lock lock(_mutex);
   const auto slot = frame % _ring.size();
@@ -102,6 +107,14 @@ void PlySequenceLoader::set_position_units(PositionUnits units) {
   const auto previous =
       _position_units.exchange(units, std::memory_order_relaxed);
   if (previous == units) return;
+  invalidate();
+}
+
+void PlySequenceLoader::set_attributes(const AttributeTable &attributes) {
+  const auto previous = _attributes.load(std::memory_order_relaxed);
+  if (previous && *previous == attributes) return;
+  _attributes.store(std::make_shared<const AttributeTable>(attributes),
+                    std::memory_order_relaxed);
   invalidate();
 }
 

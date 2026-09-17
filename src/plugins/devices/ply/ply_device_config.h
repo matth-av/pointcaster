@@ -1,5 +1,6 @@
 #pragma once
 
+#include <config/attribute_config.h>
 #include <config/color_transform_config.h>
 #include <config/file_config.h>
 #include <config/sequence_config.h>
@@ -29,6 +30,7 @@ struct PlyDeviceConfiguration {
   rfl::DefaultVal<FileFolderConfiguration> file;
   rfl::DefaultVal<PositionUnits> position_units = PositionUnits::Automatic;
   rfl::DefaultVal<SequenceConfiguration> sequence; // @folded
+  std::vector<AttributeConfiguration> attributes;
   rfl::DefaultVal<TransformConfiguration> transform;
   rfl::DefaultVal<ColorTransformConfiguration> color; // @folded
 

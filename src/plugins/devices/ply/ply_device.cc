@@ -27,7 +27,22 @@ sequence_loader_config(PlyDeviceConfiguration &config) {
       .prefetch_ahead =
           static_cast<size_t>(std::max(1, sequence.prefetch_ahead.value())),
       .position_units = config.position_units.value(),
+      .attributes = config.attributes,
   };
+}
+
+void seed_attribute_rows(PlyDeviceConfiguration &config,
+                         const ply::FileInfo &info) {
+  auto &rows = config.attributes;
+  for (const auto &attribute : info.attributes) {
+    const auto existing = std::ranges::find_if(
+        rows, [&](const auto &row) { return row.name == attribute.name; });
+    if (existing != rows.end()) continue;
+    rows.push_back({.name = attribute.name,
+                    .target = attribute.name == "pscale"
+                                  ? AttributeTarget::PointScale
+                                  : AttributeTarget::None});
+  }
 }
 
 } // namespace
@@ -66,10 +81,18 @@ bool PlyDevice::load(std::string_view url) {
 
   pc::logger()->trace("PlyDevice::load: parsing '{}'", path_str);
 
-  const auto position_units =
-      std::get<PlyDeviceConfiguration>(_config).position_units.value();
+  auto &config = std::get<PlyDeviceConfiguration>(_config);
+  const auto position_units = config.position_units.value();
 
-  auto input_cloud = ply::read_point_cloud(path_str, position_units);
+  // the header is scanned first so attribute choices the workspace already
+  // holds apply on read
+  if (const auto info = ply::scan_file_info(path_str)) {
+    _file_info = *info;
+    seed_attribute_rows(config, _file_info);
+  }
+
+  auto input_cloud =
+      ply::read_point_cloud(path_str, position_units, config.attributes);
   if (!input_cloud) {
     pc::logger()->error("PlyDevice::load: could not read '{}'", path_str);
     return false;
@@ -100,6 +123,9 @@ bool PlyDevice::load_directory(const std::filesystem::path &dir) {
   _current_frame = 0;
   _frame_accumulator = 0.f;
   // _status = DeviceStatus::Loaded;
+
+  _file_info = _sequence_loader->file_info();
+  seed_attribute_rows(config, _file_info);
 
   _input_cloud = _sequence_loader->get_frame(0);
   apply_transform();
@@ -221,6 +247,18 @@ void PlyDevice::on_config_field_changed(std::string_view path) {
     const auto file_path = config.file.value().path;
     lock.unlock();
     load(file_path);
+    return;
+  }
+
+  if (path.contains("attributes")) {
+    if (_sequence_loader) {
+      _sequence_loader->set_attributes(config.attributes);
+      reload_current_frame();
+    } else {
+      const auto file_path = config.file.value().path;
+      lock.unlock();
+      load(file_path);
+    }
     return;
   }
 
@@ -373,6 +411,21 @@ void PlyDevice::on_pipeline_output(operators::PipelineFramePtr output_frame) {
   }
   _current_point_cloud.store(std::move(cloud), std::memory_order_release);
   notify_point_cloud_updated();
+}
+
+ply::FileInfo PlyDevice::file_info() const {
+  std::lock_guard lock(_device_mutex);
+  return _file_info;
+}
+
+ImportedAttributes PlyDevice::imported_attributes() const {
+  std::lock_guard lock(_device_mutex);
+  ImportedAttributes imported;
+  imported.attributes.reserve(_file_info.attributes.size());
+  for (const auto &attribute : _file_info.attributes) {
+    imported.attributes.push_back({attribute.name, attribute.type_name});
+  }
+  return imported;
 }
 
 } // namespace pc::devices

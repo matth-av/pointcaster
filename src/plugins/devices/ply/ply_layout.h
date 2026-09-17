@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <pointcaster/point_cloud.h>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -26,9 +27,10 @@ struct FileInfo {
 // reads only the ply header
 std::optional<FileInfo> scan_file_info(const std::string &path);
 
-// every vertex property that isn't a position or a colour comes through as a
-// named float attribute on the cloud (for now)
-std::shared_ptr<PointCloud> read_point_cloud(const std::string &path,
-                                             PositionUnits units);
+// only the properties given a target in attributes are read into the cloud
+
+std::shared_ptr<PointCloud>
+read_point_cloud(const std::string &path, PositionUnits units,
+                 std::span<const AttributeConfiguration> attributes = {});
 
 } // namespace pc::devices::ply

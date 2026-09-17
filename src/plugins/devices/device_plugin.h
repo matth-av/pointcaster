@@ -53,6 +53,16 @@ struct PluginSettingsPage {
   std::string qml_file_path;
 };
 
+// what a device's source declared about one of its per-point attributes
+struct ImportedAttribute {
+  std::string name;
+  std::string type_name;
+};
+
+struct ImportedAttributes {
+  std::vector<ImportedAttribute> attributes;
+};
+
 class POINTCASTER_CLASS_API DevicePlugin
     : public Corrade::PluginManager::AbstractPlugin,
       public pc::operators::OperatorHost {
@@ -190,6 +200,10 @@ public:
 
   virtual bool is_sequence() const { return false; }
   virtual size_t frame_count() const { return 1; }
+
+  // a device that imports named per-point attributes (like pscale)
+  // must declare them here
+  virtual ImportedAttributes imported_attributes() const { return {}; }
 
   void notify_status_changed(DeviceStatus new_status) {
     if (callbacks_detached()) return;
