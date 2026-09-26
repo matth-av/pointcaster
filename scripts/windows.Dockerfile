@@ -182,6 +182,20 @@ RUN & \"$Env:VsDevShell\" -Arch amd64 -HostArch amd64; \
       --x-feature=pointreceiver \
       --clean-after-build
 
+# and again for arm64 with its own install root
+COPY triplets/arm64-v8a-*.cmake C:\\vcpkg-config\\triplets\\
+
+RUN & \"$Env:VsDevShell\" -Arch amd64 -HostArch amd64; \
+    & \"$Env:VCPKG_ROOT\vcpkg.exe\" install \
+      --x-manifest-root=C:\vcpkg-config \
+      --x-install-root=C:\vcpkg-config\vcpkg_installed_android_arm64 \
+      --overlay-triplets=C:\vcpkg-config\triplets \
+      --overlay-ports=C:\vcpkg-config\ports \
+      --triplet arm64-v8a-android-custom-release \
+      --x-no-default-features \
+      --x-feature=pointreceiver \
+      --clean-after-build
+
 WORKDIR C:\\pointcaster
 
 # entry point to the docker container is our visual studio dev shell

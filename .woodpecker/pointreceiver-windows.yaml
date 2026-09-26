@@ -111,6 +111,35 @@ steps:
       - *strict_mode
       - ./scripts/stage-unity-package.ps1 -InstallDir dist/pointreceiver-android-install -Platform Android -Arch armeabi-v7a
 
+  # ----- android arm64-v8a
+
+  - name: configure-android-arm64
+    image: pwsh
+    environment: *container_env
+    commands:
+      - *strict_mode
+      - Invoke-Expression "$env:DOCKER_RUN cmake --preset pointreceiver-android-arm64-v8a"
+
+  - name: build-android-arm64
+    image: pwsh
+    environment: *container_env
+    commands:
+      - *strict_mode
+      - Invoke-Expression "$env:DOCKER_RUN cmake --build build/pointreceiver-android-arm64-v8a"
+
+  - name: install-android-arm64
+    image: pwsh
+    environment: *container_env
+    commands:
+      - *strict_mode
+      - Invoke-Expression "$env:DOCKER_RUN cmake --install build/pointreceiver-android-arm64-v8a --prefix C:/pointcaster/dist/pointreceiver-android-arm64-install"
+
+  - name: stage-android-arm64
+    image: pwsh
+    commands:
+      - *strict_mode
+      - ./scripts/stage-unity-package.ps1 -InstallDir dist/pointreceiver-android-arm64-install -Platform Android -Arch arm64-v8a
+
 
   - name: publish-package
     image: pwsh
@@ -120,4 +149,4 @@ steps:
         from_secret: unity_package_deploy_key
     commands:
       - *strict_mode
-      - ./scripts/publish-unity-package.ps1 -Remote $env:UNITY_PACKAGE_REMOTE -Plugins Windows/x86_64,Android/armeabi-v7a
+      - ./scripts/publish-unity-package.ps1 -Remote $env:UNITY_PACKAGE_REMOTE -Plugins Windows/x86_64,Android/armeabi-v7a,Android/arm64-v8a

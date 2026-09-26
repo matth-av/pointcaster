@@ -9,7 +9,7 @@ param(
     [Parameter(Mandatory)] [string] $Remote,
     [string] $Branch = 'main',
     # Plugins-relative platform paths, e.g. Windows/x86_64
-    [string[]] $Plugins = @('Windows/x86_64', 'Android/armeabi-v7a'),
+    [string[]] $Plugins = @('Windows/x86_64', 'Android/armeabi-v7a', 'Android/arm64-v8a'),
     [switch] $DryRun
 )
 
