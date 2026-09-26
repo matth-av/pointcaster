@@ -49,7 +49,7 @@ MonoBehaviour:
   Subscription:
     AllChannels: 1
     Address: 
-  PointSize: 0.005
+  PointSize: 1
   PointScaleMultiplier: 1
   SizeMode: 0
   Shape: 0
