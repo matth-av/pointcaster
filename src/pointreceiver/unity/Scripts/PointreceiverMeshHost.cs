@@ -21,8 +21,13 @@ public class PointreceiverMeshHost : MonoBehaviour
 
     [Header("Points")]
     [Tooltip("Size in metres when Size Mode is World Units, otherwise pixels. "
-        + "Multiplies each point's point_scale radius in millimetres when the cloud has one.")]
-    [Min(0f)] public float PointSize = 0.01f;
+        + "In World Units, a cloud carrying a point_scale attribute sizes each "
+        + "point from that instead, as pointcaster does.")]
+    [Min(0f)] public float PointSize = 0.005f;
+
+    [Tooltip("Multiplies the size pointcaster gives each point through its "
+        + "point_scale attribute. Only applies in World Units.")]
+    [Min(0f)] public float PointScaleMultiplier = 1f;
 
     public PointSizeMode SizeMode = PointSizeMode.WorldUnits;
 
@@ -52,8 +57,12 @@ public class PointreceiverMeshHost : MonoBehaviour
     private const float MillimetresToMetres = 0.001f;
     private const float PositionScale = short.MaxValue * MillimetresToMetres;
 
+    // point_scale is a radius in millimetres, packed into the position's w
+    // at a tenth of a millimetre per step
     private const float PointScaleStepsPerMillimetre = 10f;
     private const float PointScaleRange = short.MaxValue / PointScaleStepsPerMillimetre;
+    // a point's quad is as wide as its diameter
+    private const float PointScaleToWidth = 2f * MillimetresToMetres;
     private const short NoPointScale = -short.MaxValue;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -82,6 +91,7 @@ public class PointreceiverMeshHost : MonoBehaviour
     private Material PointMaterial;
 
     private float AppliedPointSize = float.NaN;
+    private float AppliedPointScaleMultiplier;
     private PointSizeMode AppliedSizeMode;
     private PointShape AppliedShape;
     private Color AppliedTint;
@@ -184,17 +194,19 @@ public class PointreceiverMeshHost : MonoBehaviour
     void ApplyPointSettings()
     {
         if (PointMaterial == null) return;
-        if (PointSize == AppliedPointSize && SizeMode == AppliedSizeMode
-            && Shape == AppliedShape && Tint == AppliedTint) return;
+        if (PointSize == AppliedPointSize && PointScaleMultiplier == AppliedPointScaleMultiplier
+            && SizeMode == AppliedSizeMode && Shape == AppliedShape && Tint == AppliedTint) return;
 
         AppliedPointSize = PointSize;
+        AppliedPointScaleMultiplier = PointScaleMultiplier;
         AppliedSizeMode = SizeMode;
         AppliedShape = Shape;
         AppliedTint = Tint;
 
         PointMaterial.SetFloat("_PointSize", PointSize);
         PointMaterial.SetFloat("_PositionScale", PositionScale);
-        PointMaterial.SetFloat("_PointScaleRange", PointScaleRange);
+        PointMaterial.SetFloat("_PointScaleToSize",
+            PointScaleRange * PointScaleToWidth * PointScaleMultiplier);
         PointMaterial.SetColor("_Tint", Tint);
 
         SetToggle("_Distance", "_DISTANCE_ON", SizeMode == PointSizeMode.WorldUnits);
@@ -300,8 +312,12 @@ public class PointreceiverMeshHost : MonoBehaviour
         var handle = boundsJob.Schedule(unpackJob.Schedule(pointCount, 64));
         handle.Complete();
 
-        // quads grow around the centrepoint
-        var extent = MinMax[1] - MinMax[0] + Vector3.one * PointSize * Mathf.Max(1f, MaxPointScale[0]);
+        // quads grow around the centrepoint. in screen pixels the size has no
+        // world extent, so that pads by PointSize only as a rough allowance
+        float pointWidth = SizeMode == PointSizeMode.WorldUnits && MaxPointScale[0] >= 0f
+            ? MaxPointScale[0] * PointScaleToWidth * PointScaleMultiplier
+            : PointSize;
+        var extent = MinMax[1] - MinMax[0] + Vector3.one * pointWidth;
         var bounds = new Bounds((MinMax[0] + MinMax[1]) * 0.5f, extent);
 
         ApplyMeshData(targetMesh, pointCount, bounds);

@@ -43,7 +43,8 @@ Shader "Point Cloud/Point Quad"
             struct Attributes
             {
                 // xyz is the position over the normalised range. w is the
-                // point scale over its own range, negative when there is none
+                // point_scale radius over its own range, negative when the
+                // cloud has none
                 float4 position : POSITION;
                 half4 color : COLOR;
                 // which corner of its quad this vertex is, as -1/+1 in x and y
@@ -66,7 +67,8 @@ Shader "Point Cloud/Point Quad"
             // deliberately not a material property: it describes the incoming
             // data rather than anything there is a choice about
             float _PositionScale;
-            float _PointScaleRange;
+            // turns w into a quad width in metres
+            float _PointScaleToSize;
 
             Varyings Vertex(Attributes input)
             {
@@ -84,12 +86,15 @@ Shader "Point Cloud/Point Quad"
 
                 float2 corner = input.corner;
 
-                float pointScale = input.position.w * _PointScaleRange;
-                float pointSize = _PointSize * lerp(1.0, pointScale, step(0.0, input.position.w));
+                float pointSize = _PointSize;
 
                 float3 viewPos = UnityObjectToViewPos(input.position.xyz * _PositionScale);
 
             #ifdef _DISTANCE_ON
+                // a point_scale is a physical size, so it only means anything here
+                pointSize = lerp(pointSize, input.position.w * _PointScaleToSize,
+                    step(0.0, input.position.w));
+
                 // pointSize is a width in world units, so offsetting in view
                 // space keeps a point the same size in the scene, shrinking
                 // with distance
