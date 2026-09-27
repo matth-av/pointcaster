@@ -580,9 +580,7 @@ void transform_point_cloud(const void *owner, const PointCloud &input_cloud,
   if (point_scale.active) {
     const auto existing = output_cloud.attributes.find(point_scale_attribute);
     if (existing == output_cloud.attributes.end()) {
-      const auto base =
-          default_point_scale_millimetres().load(std::memory_order_relaxed) *
-          point_scale.value;
+      const auto base = default_point_radius_mm * point_scale.value;
       auto point_scales = output_cloud.add<float>(point_scale_attribute);
       thrust::fill(thrust::tbb::par, point_scales.begin(), point_scales.end(),
                    base);

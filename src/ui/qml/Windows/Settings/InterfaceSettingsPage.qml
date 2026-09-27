@@ -151,6 +151,7 @@ SettingsPage {
 
         SettingsRow {
             label: "Point size (mm)"
+            description: "Default size of points in the session view. Clouds with a scale attribute ignore this setting."
 
             DragInt {
                 font: Scaling.uiFont

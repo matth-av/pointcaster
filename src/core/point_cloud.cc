@@ -71,13 +71,11 @@ T default_attribute_value(std::string_view name,
                           const AttributeEncoding &encoding) {
   if constexpr (std::is_same_v<T, float>) {
     if (name == point_scale_attribute) {
-      return default_point_scale_millimetres().load(std::memory_order_relaxed);
+      return default_point_radius_mm;
     }
   } else if constexpr (std::is_integral_v<T>) {
     if (name == point_scale_attribute) {
-      return quantise<T>(
-          default_point_scale_millimetres().load(std::memory_order_relaxed),
-          encoding);
+      return quantise<T>(default_point_radius_mm, encoding);
     }
     // an offset encoding does not put a real zero at a raw zero
     return quantise<T>(0.0f, encoding);
@@ -190,11 +188,6 @@ void PointCloud::gather_attributes_into(
   }
 
   destination.attributes = std::move(gathered);
-}
-
-std::atomic<float> &default_point_scale_millimetres() {
-  static std::atomic<float> millimetres{2.5f};
-  return millimetres;
 }
 
 PointCloud &operator+=(PointCloud &lhs, PointCloud const &rhs) {

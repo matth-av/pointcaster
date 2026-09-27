@@ -131,9 +131,7 @@ void transform_from(F &&get_point, size_t point_count, PointCloud &output_cloud,
   if (point_scale.active) {
     const auto existing = output_cloud.attributes.find(point_scale_attribute);
     if (existing == output_cloud.attributes.end()) {
-      const auto base =
-          default_point_scale_millimetres().load(std::memory_order_relaxed) *
-          point_scale.value;
+      const auto base = default_point_radius_mm * point_scale.value;
       auto point_scales = output_cloud.add<float>(point_scale_attribute);
       std::fill(std::execution::par_unseq, point_scales.begin(),
                 point_scales.end(), base);

@@ -61,6 +61,9 @@ public class PointreceiverMeshHost : MonoBehaviour
     // a point's quad is as wide as its diameter
     private const float PointScaleToWidth = 2f * MillimetresToMetres;
     private const short NoPointScale = -short.MaxValue;
+    // the radius pointcaster gives a point_scale of 1...
+    // this matches default point size coming from pointcaster & houdini of 5mm
+    private const float DefaultPointScaleMillimetres = 2.5f;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct PackedPosition
@@ -215,7 +218,7 @@ public class PointreceiverMeshHost : MonoBehaviour
     float FallbackPointWidth()
     {
         return SizeMode == PointSizeMode.WorldUnits
-            ? PointSize * PointScaleToWidth * PointScaleMultiplier
+            ? PointSize * DefaultPointScaleMillimetres * PointScaleToWidth * PointScaleMultiplier
             : PointSize;
     }
 
