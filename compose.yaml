@@ -6,7 +6,7 @@ services:
     stdin_open: true
     tty: true
     working_dir: /pointcaster
-    volumes: 
+    volumes:
       - .:/pointcaster
   dev-win:
     platform: "windows/amd64"
@@ -16,13 +16,5 @@ services:
     tty: true
     working_dir: C:\pointcaster
     isolation: process
-    # mem_limit: 14g
-    # cpu_count: 22
-    volumes: 
+    volumes:
       - .:C:\pointcaster
-      - pointcaster-windows-build-vol:C:\pointcaster\build
-      - .\build\windows-release\install:C:\pointcaster\build\windows-release\install
-      - .\build\pointreceiver-windows-release\install:C:\pointcaster\build\pointreceiver-windows-release\install
-      - .\build\pointreceiver-android-armeabi-v7a\install:C:\pointcaster\build\pointreceiver-android-armeabi-v7a\install
-volumes:
-  pointcaster-windows-build-vol:
