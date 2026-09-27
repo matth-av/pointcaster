@@ -20,10 +20,7 @@ public class PointreceiverMeshHost : MonoBehaviour
     public enum PointSizeMode { WorldUnits, ScreenPixels }
 
     [Header("Points")]
-    [Tooltip("Size in metres when Size Mode is World Units, otherwise pixels. "
-        + "In World Units, a cloud carrying a point_scale attribute sizes each "
-        + "point from that instead, as pointcaster does.")]
-    [Min(0f)] public float PointSize = 0.005f;
+    [Min(0f)] public float PointSize = 1f;
 
     [Tooltip("Multiplies the size pointcaster gives each point through its "
         + "point_scale attribute. Only applies in World Units.")]
@@ -203,7 +200,7 @@ public class PointreceiverMeshHost : MonoBehaviour
         AppliedShape = Shape;
         AppliedTint = Tint;
 
-        PointMaterial.SetFloat("_PointSize", PointSize);
+        PointMaterial.SetFloat("_PointSize", FallbackPointWidth());
         PointMaterial.SetFloat("_PositionScale", PositionScale);
         PointMaterial.SetFloat("_PointScaleToSize",
             PointScaleRange * PointScaleToWidth * PointScaleMultiplier);
@@ -211,6 +208,15 @@ public class PointreceiverMeshHost : MonoBehaviour
 
         SetToggle("_Distance", "_DISTANCE_ON", SizeMode == PointSizeMode.WorldUnits);
         SetToggle("_Disk", "_DISK_ON", Shape == PointShape.Disk);
+    }
+
+    // the width of a point without a point_scale, in metres or pixels to
+    // match the size mode
+    float FallbackPointWidth()
+    {
+        return SizeMode == PointSizeMode.WorldUnits
+            ? PointSize * PointScaleToWidth * PointScaleMultiplier
+            : PointSize;
     }
 
     void SetToggle(string property, string keyword, bool on)
@@ -316,7 +322,7 @@ public class PointreceiverMeshHost : MonoBehaviour
         // world extent, so that pads by PointSize only as a rough allowance
         float pointWidth = SizeMode == PointSizeMode.WorldUnits && MaxPointScale[0] >= 0f
             ? MaxPointScale[0] * PointScaleToWidth * PointScaleMultiplier
-            : PointSize;
+            : FallbackPointWidth();
         var extent = MinMax[1] - MinMax[0] + Vector3.one * pointWidth;
         var bounds = new Bounds((MinMax[0] + MinMax[1]) * 0.5f, extent);
 
