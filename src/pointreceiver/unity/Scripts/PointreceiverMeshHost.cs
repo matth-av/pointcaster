@@ -136,6 +136,24 @@ public class PointreceiverMeshHost : MonoBehaviour
         }
     }
 
+    // restarts the receiver so a changed PointCasterAddress or PointCloudPort
+    // takes effect
+    public void Reconnect()
+    {
+        if (!isActiveAndEnabled) return;
+        OnDisable();
+        OnEnable();
+    }
+
+    // points the receiver at another pointcaster, reconnecting if it changed
+    public void SetAddress(string pointCasterAddress, int pointCloudPort)
+    {
+        if (pointCasterAddress == PointCasterAddress && pointCloudPort == PointCloudPort) return;
+        PointCasterAddress = pointCasterAddress;
+        PointCloudPort = pointCloudPort;
+        Reconnect();
+    }
+
     void OnDestroy()
     {
         if (PointMaterial != null) Destroy(PointMaterial);
