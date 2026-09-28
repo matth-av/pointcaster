@@ -3,6 +3,7 @@
 	"configurePresets": [
 		{
 			"name": "default-preset",
+			"hidden": true,
 			"generator": "Ninja",
 			"binaryDir": "${sourceDir}/build/${presetName}",
 			"installDir": "${sourceDir}/build/${presetName}/install",
@@ -20,6 +21,7 @@
 		{
 			"name": "default-linux",
 			"inherits": "default-preset",
+			"hidden": true,
 			"environment": {
 				"VCPKG_KEEP_ENV_VARS": "Qt6_DIR;QT_DIR;TBB_DIR;CUDACXX;Thrust_DIR;LD_LIBRARY_PATH"
 			}
@@ -69,15 +71,16 @@
 			}
 		},
 		{
-			"name": "windows-default",
+			"name": "default-windows",
 			"inherits": "default-preset",
+			"hidden": true,
 			"environment": {
 				"VCPKG_KEEP_ENV_VARS": "Qt6_DIR;QT_DIR;TBB_DIR;CUDAToolkit_ROOT;CUDACXX;Thrust_DIR"
 			}
 		},
 		{
 			"name": "windows-release",
-			"inherits": "windows-default",
+			"inherits": "default-windows",
 			"displayName": "Pointcaster Release build for Windows x64",
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "Release",
@@ -92,7 +95,7 @@
 		},
 		{
 			"name": "windows-debug",
-			"inherits": "windows-default",
+			"inherits": "default-windows",
 			"displayName": "Pointcaster Debug build for Windows x64",
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "Debug",
