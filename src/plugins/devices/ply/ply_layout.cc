@@ -173,11 +173,13 @@ VertexLayout layout_of(const miniply::PLYReader &reader) {
   return layout;
 }
 
+// the data starts after the first newline following "end_header"
 size_t data_offset_of(const char *data, size_t length) {
-  static constexpr std::string_view sentinel = "end_header\n";
   const std::string_view header(data, std::min(length, size_t{65536}));
-  const auto found = header.find(sentinel);
-  return found == std::string_view::npos ? 0 : found + sentinel.size();
+  const auto found = header.find("end_header");
+  if (found == std::string_view::npos) return 0;
+  const auto line_end = header.find('\n', found);
+  return line_end == std::string_view::npos ? 0 : line_end + 1;
 }
 
 // binary rows sit at a fixed stride, so the values are taken straight out of
