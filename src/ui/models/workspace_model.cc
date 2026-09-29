@@ -57,6 +57,7 @@
 #include <plugins/devices/orbbec/orbbec_device_config.h>
 #include <plugins/devices/ply/ply_device_adapter.gen.h>
 #include <plugins/devices/ply/ply_device_config.h>
+#include <plugins/operators/chroma_key/chroma_key_config_adapter.gen.h>
 #include <plugins/operators/cluster_extraction/cluster_extraction_config_adapter.gen.h>
 #include <plugins/operators/fringe_removal/fringe_removal_config_adapter.gen.h>
 #include <plugins/operators/range_filter/range_filter_config_adapter.gen.h>
@@ -98,6 +99,11 @@ static ConfigAdapter *make_operator_config_adapter(
                                  pc::operators::RangeFilterConfiguration>) {
           adapter = new pc::operators::RangeFilterConfigurationAdapter(config,
                                                                        parent);
+        } else if constexpr (std::same_as<
+                                 ConfigType,
+                                 pc::operators::ChromaKeyConfiguration>) {
+          adapter = new pc::operators::ChromaKeyConfigurationAdapter(config,
+                                                                     parent);
         }
       },
       config_variant);
@@ -2185,6 +2191,9 @@ void WorkspaceModel::addOperatorToDevice(int deviceIndex,
         "addOperatorToDevice: deviceIndex={} idx={} plugin={} has_workspace={}",
         deviceIndex, idx, fmt::ptr(p), p->has_workspace());
     p->update_config(_workspace.config.devices[size_t(idx)]);
+    // the rebuilt pipeline starts empty, so the current frame has to be run
+    // back through it for the change to show on a paused or static cloud
+    p->reprocess();
   }
   adapter->rebuildOperatorAdapters();
   attachOperatorConfigAdapters(adapter);
@@ -2221,6 +2230,7 @@ void WorkspaceModel::removeOperatorFromDevice(int deviceIndex,
       _workspace.devices[deviceIndex]) {
     _workspace.devices[deviceIndex]->update_config(
         _workspace.config.devices[size_t(idx)]);
+    _workspace.devices[deviceIndex]->reprocess();
   }
   adapter->rebuildOperatorAdapters();
   attachOperatorConfigAdapters(adapter);
@@ -2254,6 +2264,7 @@ void WorkspaceModel::reorderOperatorOnDevice(int deviceIndex, int fromIndex,
       _workspace.devices[deviceIndex]) {
     _workspace.devices[deviceIndex]->update_config(
         _workspace.config.devices[size_t(idx)]);
+    _workspace.devices[deviceIndex]->reprocess();
   }
   adapter->rebuildOperatorAdapters();
   attachOperatorConfigAdapters(adapter);

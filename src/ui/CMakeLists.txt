@@ -81,12 +81,13 @@ set(CONFIG_ADAPTER_INPUTS
     # TODO we need some faculty to create these adapters
     # without them being expressed in the main module here...
     # i guess the UI adapters need to be generated inside the 
-    # device CMakeLists.txt not here
+    # plugin CMakeLists.txt not here
     plugins/devices/orbbec/orbbec_device_config.h
     plugins/devices/ply/ply_device_config.h
     plugins/operators/fringe_removal/fringe_removal_config.h
     plugins/operators/cluster_extraction/cluster_extraction_config.h
     plugins/operators/range_filter/range_filter_config.h
+    plugins/operators/chroma_key/chroma_key_config.h
 )
 
 add_qml_adapters(

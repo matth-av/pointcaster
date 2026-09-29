@@ -152,8 +152,17 @@ void PlyDevice::reload() {
   load(config.file.path);
 }
 
+void PlyDevice::reprocess() {
+  _force_reprocess.store(true, std::memory_order_release);
+}
+
 void PlyDevice::tick(float delta_time) {
   std::lock_guard lock(_device_mutex);
+
+  if (_force_reprocess.exchange(false, std::memory_order_acq_rel)) {
+    apply_transform();
+  }
+
   if (!_sequence_loader) return;
 
   auto &config = std::get<PlyDeviceConfiguration>(_config);

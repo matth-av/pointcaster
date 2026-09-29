@@ -42,10 +42,7 @@ public:
   void stop() override {};
   void restart() override {};
 
-  void reprocess() override {
-    std::lock_guard lock(_device_mutex);
-    apply_transform();
-  }
+  void reprocess() override;
 
   void on_pipeline_output(operators::PipelineFramePtr output_frame) override;
 
@@ -80,6 +77,8 @@ private:
   int _current_frame = 0;
 
   std::shared_ptr<PointCloud> _input_cloud;
+
+  std::atomic<bool> _force_reprocess{false};
 
   std::atomic<std::shared_ptr<PointCloud>> _current_point_cloud{
       std::make_shared<PointCloud>(PointCloud{{}, {}, {}})};
