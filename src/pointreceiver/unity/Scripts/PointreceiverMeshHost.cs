@@ -39,6 +39,7 @@ public class PointreceiverMeshHost : MonoBehaviour
         public string Address;
         public GameObject GameObject;
         public Mesh Mesh;
+        [NonSerialized] public int PointCapacity;
     }
 
     public List<PointCloudChannel> PointCloudChannels = new List<PointCloudChannel>();
@@ -79,7 +80,7 @@ public class PointreceiverMeshHost : MonoBehaviour
         public Color32 Color;
     }
 
-    private int CurrentCapacity = 0;
+    private int CurrentPointCapacity = 0;
     private int[] Indices;
     private NativeArray<PointVertex> OutputVertices;
     private NativeArray<Vector2> QuadCorners;
@@ -181,10 +182,10 @@ public class PointreceiverMeshHost : MonoBehaviour
                 ClearChannelMesh(address);
                 continue;
             }
-            // grow first so a mesh created below is laid out only once
             EnsureCapacity(frame.PointCount);
-            var mesh = EnsureOrCreateChannelMesh(address);
-            UnpackPointCloudIntoMesh(frame, mesh);
+            var channel = EnsureOrCreateChannel(address);
+            if (channel.PointCapacity < frame.PointCount) ConfigureMesh(channel);
+            UnpackPointCloudIntoMesh(frame, channel.Mesh);
         }
 
         ApplyPointSettings();
@@ -256,20 +257,20 @@ public class PointreceiverMeshHost : MonoBehaviour
 
     void EnsureCapacity(int pointCount)
     {
-        if (CurrentCapacity >= pointCount) return;
+        if (CurrentPointCapacity >= pointCount) return;
 
         // points per step of buffer growth
         const int CapacityBlock = 8192;
-        CurrentCapacity = (pointCount / CapacityBlock + 2) * CapacityBlock;
+        CurrentPointCapacity = (pointCount / CapacityBlock + 2) * CapacityBlock;
 
         if (OutputVertices.IsCreated) OutputVertices.Dispose();
         if (QuadCorners.IsCreated) QuadCorners.Dispose();
 
-        int vertexCapacity = CurrentCapacity * VerticesPerPoint;
+        int vertexCapacity = CurrentPointCapacity * VerticesPerPoint;
 
-        Indices = new int[CurrentCapacity * IndicesPerPoint];
+        Indices = new int[CurrentPointCapacity * IndicesPerPoint];
         QuadCorners = new NativeArray<Vector2>(vertexCapacity, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        for (int i = 0; i < CurrentCapacity; i++)
+        for (int i = 0; i < CurrentPointCapacity; i++)
         {
             int vertex = i * VerticesPerPoint;
             int index = i * IndicesPerPoint;
@@ -295,11 +296,6 @@ public class PointreceiverMeshHost : MonoBehaviour
         if (!MaxPointScale.IsCreated)
         {
             MaxPointScale = new NativeArray<float>(1, Allocator.Persistent);
-        }
-
-        foreach (var channel in PointCloudChannels) 
-        {
-            ConfigureMesh(channel.Mesh);
         }
     }
 
@@ -350,10 +346,13 @@ public class PointreceiverMeshHost : MonoBehaviour
         ApplyMeshData(targetMesh, pointCount, bounds);
     }
 
-    void ConfigureMesh(Mesh mesh)
+    void ConfigureMesh(PointCloudChannel channel)
     {
-        int vertexCapacity = CurrentCapacity * VerticesPerPoint;
-        int indexCapacity = CurrentCapacity * IndicesPerPoint;
+        int vertexCapacity = CurrentPointCapacity * VerticesPerPoint;
+        int indexCapacity = CurrentPointCapacity * IndicesPerPoint;
+
+        var mesh = channel.Mesh;
+        channel.PointCapacity = CurrentPointCapacity;
 
         mesh.Clear();
         mesh.SetVertexBufferParams(
@@ -401,11 +400,11 @@ public class PointreceiverMeshHost : MonoBehaviour
         SetDrawnPointCount(existing.Mesh, 0, new Bounds());
     }
 
-    Mesh EnsureOrCreateChannelMesh(string address)
+    PointCloudChannel EnsureOrCreateChannel(string address)
     {
         var existing = PointCloudChannels.FirstOrDefault(channel => channel.Address == address);
         if (existing != null)
-            return existing.Mesh;
+            return existing;
 
         var newCloudObject = new GameObject(address);
         newCloudObject.transform.SetParent(transform, worldPositionStays: false);
@@ -413,7 +412,6 @@ public class PointreceiverMeshHost : MonoBehaviour
 
         var newMesh = new Mesh { indexFormat = IndexFormat.UInt32 };
         newMesh.MarkDynamic();
-        ConfigureMesh(newMesh);
         newCloudObject.AddComponent<MeshFilter>().sharedMesh = newMesh;
 
         var meshRenderer = newCloudObject.AddComponent<MeshRenderer>();
@@ -421,14 +419,15 @@ public class PointreceiverMeshHost : MonoBehaviour
         meshRenderer.receiveShadows = false;
         meshRenderer.sharedMaterial = EnsurePointMaterial();
 
-        PointCloudChannels.Add(new PointCloudChannel
+        var newChannel = new PointCloudChannel
         {
             Address = address,
             GameObject = newCloudObject,
             Mesh = newMesh
-        });
+        };
+        PointCloudChannels.Add(newChannel);
 
-        return newMesh;
+        return newChannel;
     }
 
     [BurstCompile]
