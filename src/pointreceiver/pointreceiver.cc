@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <condition_variable>
 #include <config/config_value.h>
@@ -216,6 +217,16 @@ sync_subscriptions(const SubscriptionSnapshot &current_subscriptions,
   return latest_subscriptions;
 }
 
+zmq::recv_result_t try_receive(zmq::socket_t &socket, zmq::message_t &message,
+                               zmq::recv_flags flags) {
+  try {
+    return socket.recv(message, flags);
+  } catch (const zmq::error_t &e) {
+    if (e.num() != EINTR) throw;
+  }
+  return try_receive(socket, message, flags);
+}
+
 void message_receive_loop(pc::receiver::Context &ctx, zmq::socket_t socket) {
   pc::logger()->trace("Beginning message receive thread");
 
@@ -224,42 +235,49 @@ void message_receive_loop(pc::receiver::Context &ctx, zmq::socket_t socket) {
   SubscriptionSnapshot subscriptions;
 
   while (!ctx.message_stopping.load(std::memory_order_acquire)) {
+    try {
+      subscriptions = sync_subscriptions(subscriptions, socket, [&ctx] {
+        std::lock_guard lock(ctx.message_subscription_mutex);
+        return ctx.message_subscriptions;
+      });
 
-    subscriptions = sync_subscriptions(subscriptions, socket, [&ctx] {
-      std::lock_guard lock(ctx.message_subscription_mutex);
-      return ctx.message_subscriptions;
-    });
+      // we receive multi-part messages, where the first is the message's
+      // path/address, and the next is the value.
 
-    // we receive multi-part messages, where the first is the message's
-    // path/address, and the next is the value.
-    // so the
+      auto receive_flags = zmq::recv_flags::none;
+      std::string current_topic;
 
-    auto receive_flags = zmq::recv_flags::none;
-    std::string current_topic;
+      for (zmq::message_t message;
+           try_receive(socket, message, receive_flags);) {
+        receive_flags = zmq::recv_flags::dontwait;
 
-    for (zmq::message_t message; socket.recv(message, receive_flags);) {
-      receive_flags = zmq::recv_flags::dontwait;
-
-      // if this is the first part of the multipart message,
-      // store it as the incoming message's topic and move on to the next part
-      if (message.more()) {
-        current_topic.assign(message.to_string_view());
-        continue;
+        // if this is the first part of the multipart message, store it as the
+        // incoming message's topic and move on to the next part
+        if (message.more()) {
+          current_topic.assign(message.to_string_view());
+          continue;
+        }
+        // grab the value
+        const std::span buffer(static_cast<const std::byte *>(message.data()),
+                               message.size());
+        zpp::bits::in deserialize(buffer);
+        pc::ConfigValue value;
+        const auto result = deserialize(value);
+        if (zpp::bits::failure(result)) {
+          pc::logger()->warn(
+              "Failed to deserialise incoming message from Pointcaster");
+          continue;
+        }
+        // dump into message_queue where the MessageFrame to emplace is a pair
+        // of the target path string, and the value variant
+        ctx.message_queue.emplace(std::move(current_topic), value);
       }
-      // grab the value
-      const std::span buffer(static_cast<const std::byte *>(message.data()),
-                             message.size());
-      zpp::bits::in deserialize(buffer);
-      pc::ConfigValue value;
-      const auto result = deserialize(value);
-      if (zpp::bits::failure(result)) {
-        pc::logger()->warn(
-            "Failed to deserialise incoming message from Pointcaster");
-        continue;
-      }
-      // dump into message_queue where the MessageFrame to emplace is a pair of
-      // the target path string, and the value variant
-      ctx.message_queue.emplace(std::move(current_topic), value);
+    } catch (const std::exception &e) {
+      pc::logger()->error("Message receive loop: {}", e.what());
+      std::this_thread::sleep_for(100ms);
+    } catch (...) {
+      pc::logger()->error("Message receive loop: unknown exception");
+      std::this_thread::sleep_for(100ms);
     }
   }
 
@@ -277,62 +295,71 @@ void point_cloud_receive_loop(pc::receiver::Context &ctx,
   pc::StringMap<zmq::message_t> latest_payloads;
 
   while (!ctx.point_cloud_stopping.load(std::memory_order_acquire)) {
+    try {
+      subscriptions = sync_subscriptions(subscriptions, socket, [&ctx] {
+        std::lock_guard lock(ctx.point_cloud_subscription_mutex);
+        return ctx.point_cloud_subscriptions;
+      });
 
-    subscriptions = sync_subscriptions(subscriptions, socket, [&ctx] {
-      std::lock_guard lock(ctx.point_cloud_subscription_mutex);
-      return ctx.point_cloud_subscriptions;
-    });
+      latest_payloads.clear();
 
-    latest_payloads.clear();
-
-    // block for the first frame so an idle socket doesn't spin, then drain the
-    // rest without blocking
-    auto receive_flags = zmq::recv_flags::none;
-    for (zmq::message_t message; socket.recv(message, receive_flags);) {
-      receive_flags = zmq::recv_flags::dontwait;
-      const auto frame = message.to_string_view();
-      const auto separator = frame.find('\0');
-      if (separator == std::string_view::npos) continue;
-      const auto address = frame.substr(0, separator);
-      latest_payloads[address] = std::move(message);
-    }
-
-    const auto message_bytes = [](const zmq::message_t &message) {
-      return std::span<const std::byte>{
-          static_cast<const std::byte *>(message.data()), message.size()};
-    };
-
-    for (auto &[address, payload] : latest_payloads) {
-      const auto cloud_bytes =
-          message_bytes(payload).subspan(address.size() + 1);
-
-      std::shared_ptr<const PointCloud> cloud;
-      try {
-        cloud = std::make_shared<const PointCloud>(
-            PointCloud::decompress(cloud_bytes));
-      } catch (const std::exception &e) {
-        pc::logger()->warn("point_cloud deserialize threw: {} (size={})",
-                           e.what(), cloud_bytes.size());
-        continue;
-      } catch (...) {
-        pc::logger()->warn(
-            "point_cloud deserialize threw unknown exception (size={})",
-            cloud_bytes.size());
-        continue;
+      // block for the first frame so an idle socket doesn't spin, then drain
+      // the rest without blocking
+      auto receive_flags = zmq::recv_flags::none;
+      for (zmq::message_t message;
+           try_receive(socket, message, receive_flags);) {
+        receive_flags = zmq::recv_flags::dontwait;
+        const auto frame = message.to_string_view();
+        const auto separator = frame.find('\0');
+        if (separator == std::string_view::npos) continue;
+        const auto address = frame.substr(0, separator);
+        latest_payloads[address] = std::move(message);
       }
 
-      {
-        std::lock_guard lock(ctx.point_cloud_stream_mutex);
-        auto it = ctx.point_cloud_frames.find(address);
-        if (it == ctx.point_cloud_frames.end()) {
-          it = ctx.point_cloud_frames.emplace(address, PointCloudFrame{}).first;
-          ctx.known_point_cloud_addresses.emplace(address);
+      const auto message_bytes = [](const zmq::message_t &message) {
+        return std::span<const std::byte>{
+            static_cast<const std::byte *>(message.data()), message.size()};
+      };
+
+      for (auto &[address, payload] : latest_payloads) {
+        const auto cloud_bytes =
+            message_bytes(payload).subspan(address.size() + 1);
+
+        std::shared_ptr<const PointCloud> cloud;
+        try {
+          cloud = std::make_shared<const PointCloud>(
+              PointCloud::decompress(cloud_bytes));
+        } catch (const std::exception &e) {
+          pc::logger()->warn("point_cloud deserialize threw: {} (size={})",
+                             e.what(), cloud_bytes.size());
+          continue;
+        } catch (...) {
+          pc::logger()->warn(
+              "point_cloud deserialize threw unknown exception (size={})",
+              cloud_bytes.size());
+          continue;
         }
-        it->second.incoming_cloud = std::move(cloud);
-        it->second.timestamp = ++ctx.point_cloud_stream_timestamp;
-        it->second.pending = true;
+
+        {
+          std::lock_guard lock(ctx.point_cloud_stream_mutex);
+          auto it = ctx.point_cloud_frames.find(address);
+          if (it == ctx.point_cloud_frames.end()) {
+            it = ctx.point_cloud_frames.emplace(address, PointCloudFrame{})
+                     .first;
+            ctx.known_point_cloud_addresses.emplace(address);
+          }
+          it->second.incoming_cloud = std::move(cloud);
+          it->second.timestamp = ++ctx.point_cloud_stream_timestamp;
+          it->second.pending = true;
+        }
+        ctx.point_cloud_stream_cv.notify_one();
       }
-      ctx.point_cloud_stream_cv.notify_one();
+    } catch (const std::exception &e) {
+      pc::logger()->error("Point cloud receive loop: {}", e.what());
+      std::this_thread::sleep_for(100ms);
+    } catch (...) {
+      pc::logger()->error("Point cloud receive loop: unknown exception");
+      std::this_thread::sleep_for(100ms);
     }
   }
 
@@ -425,6 +452,9 @@ pointreceiver_start_message_receiver(pointreceiver_context *ctx,
       socket.set(zmq::sockopt::linger, 0);
       constexpr auto receive_thread_block_timeout_ms = 100;
       socket.set(zmq::sockopt::rcvtimeo, receive_thread_block_timeout_ms);
+      socket.set(zmq::sockopt::heartbeat_ivl, 1000);
+      socket.set(zmq::sockopt::heartbeat_timeout, 10000);
+      socket.set(zmq::sockopt::heartbeat_ttl, 10000);
       socket.connect(endpoint);
     } catch (const zmq::error_t &e) {
       pc::logger()->error("Message receiver failed to connect to '{}' - {}",
@@ -547,6 +577,9 @@ pointreceiver_status pointreceiver_start_point_receiver(
       socket.set(zmq::sockopt::linger, 0);
       constexpr auto receive_thread_block_timeout_ms = 100;
       socket.set(zmq::sockopt::rcvtimeo, receive_thread_block_timeout_ms);
+      socket.set(zmq::sockopt::heartbeat_ivl, 1000);
+      socket.set(zmq::sockopt::heartbeat_timeout, 10000);
+      socket.set(zmq::sockopt::heartbeat_ttl, 10000);
       socket.connect(endpoint);
     } catch (const zmq::error_t &e) {
       pc::logger()->error("Point receiver failed to connect to '{}' - {}",
