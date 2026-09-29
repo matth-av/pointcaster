@@ -57,7 +57,7 @@ public class Pointreceiver : IDisposable
     // capacity of the buffers we hand the native library for channel addresses
     private const int AddressCapacity = 256;
 
-    private StringBuilder _AddressStringBuilder = new StringBuilder(AddressCapacity);
+    private readonly byte[] _AddressBuffer = new byte[AddressCapacity];
 
     // The frame's buffers are borrowed from the native context and are
     // invalidated by the next dequeue, so callers must copy out of them before
@@ -66,10 +66,10 @@ public class Pointreceiver : IDisposable
     {
         frame = default;
         var status = PointreceiverNative.DequeuePointCloud(
-            context, _AddressStringBuilder, (UIntPtr)_AddressStringBuilder.Capacity,
+            context, _AddressBuffer, (UIntPtr)_AddressBuffer.Length,
             ref frame, timeoutMs);
         bool success = status == PointreceiverStatus.Ok;
-        address = success ? _AddressStringBuilder.ToString() : "";
+        address = success ? DecodeAddress(_AddressBuffer) : "";
         return success;
     }
 
@@ -77,14 +77,20 @@ public class Pointreceiver : IDisposable
     {
         var count = PointreceiverNative.KnownPointCloudAddressCount(context).ToUInt64();
         var addresses = new List<string>((int)count);
-        var buffer = new StringBuilder(AddressCapacity);
+        var buffer = new byte[AddressCapacity];
         for (ulong i = 0; i < count; i++)
         {
             var status = PointreceiverNative.GetKnownPointCloudAddress(
-                context, (UIntPtr)i, buffer, (UIntPtr)buffer.Capacity);
-            if (status == PointreceiverStatus.Ok) addresses.Add(buffer.ToString());
+                context, (UIntPtr)i, buffer, (UIntPtr)buffer.Length);
+            if (status == PointreceiverStatus.Ok) addresses.Add(DecodeAddress(buffer));
         }
         return addresses;
+    }
+
+    private static string DecodeAddress(byte[] buffer)
+    {
+        var length = Array.IndexOf(buffer, (byte)0);
+        return Encoding.UTF8.GetString(buffer, 0, length < 0 ? buffer.Length : length);
     }
 
     public void Dispose()

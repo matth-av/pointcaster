@@ -1,6 +1,5 @@
 using System;
 using System.Runtime.InteropServices;
-using System.Text;
 
 // Bindings for the Pointrecevier C API
 public static class PointreceiverNative
@@ -55,7 +54,7 @@ public static class PointreceiverNative
     [DllImport(NativeLib, EntryPoint = "pointreceiver_dequeue_point_cloud",
      CallingConvention = CallingConvention.Cdecl)]
     public static extern PointreceiverStatus DequeuePointCloud(IntPtr context,
-        [Out, MarshalAs(UnmanagedType.LPStr)] StringBuilder outAddress, UIntPtr addressCapacity,
+        [Out] byte[] outAddress, UIntPtr addressCapacity,
         ref PointCloudFrame frame, int timeoutMs);
 
     // Channel addresses observed on the stream so far
@@ -66,7 +65,7 @@ public static class PointreceiverNative
     [DllImport(NativeLib, EntryPoint = "pointreceiver_get_known_point_cloud_address",
      CallingConvention = CallingConvention.Cdecl)]
     public static extern PointreceiverStatus GetKnownPointCloudAddress(IntPtr context, UIntPtr index,
-        [Out, MarshalAs(UnmanagedType.LPStr)] StringBuilder outAddress, UIntPtr outCapacity);
+        [Out] byte[] outAddress, UIntPtr outCapacity);
 
     // Attribute lookup by name within a dequeued frame. Returns a borrowed
     // pointer into the attribute's buffer
