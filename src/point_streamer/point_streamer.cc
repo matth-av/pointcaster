@@ -12,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <networking/zmq_context.h>
+#include <optional>
 #include <point_streamer/stream_channels.h>
 #include <ranges>
 #include <session/session.h>
@@ -53,6 +54,40 @@ bool channel_enabled(
   return it->enabled;
 }
 
+struct SocketSettings {
+  std::string address;
+  int port = 0;
+  int send_high_water_mark = 0;
+
+  bool operator==(const SocketSettings &) const = default;
+};
+
+std::optional<zmq::socket_t> bind_socket(const SocketSettings &settings) {
+  zmq::socket_t socket{zmq_context(), zmq::socket_type::xpub};
+  socket.set(zmq::sockopt::sndhwm, settings.send_high_water_mark);
+  socket.set(zmq::sockopt::linger, 0);
+  // adding the verboser with xpub ensures we get
+  // subscribe events & "unsubscribe" events for clients that drop off,
+  socket.set(zmq::sockopt::xpub_verboser, 1);
+
+  const auto endpoint =
+      std::format("tcp://{}:{}", settings.address, settings.port);
+  try {
+    socket.bind(endpoint);
+  } catch (const zmq::error_t &e) {
+    pc::logger()->error("Point streamer failed to bind {} ({})", endpoint,
+                        e.what());
+    return std::nullopt;
+  } catch (...) {
+    pc::logger()->error("Point streamer failed to bind {} (Unknown exception)",
+                        endpoint);
+    return std::nullopt;
+  }
+  pc::logger()->info("Point streamer bound to {} (max {} queued frames)",
+                     endpoint, settings.send_high_water_mark);
+  return socket;
+}
+
 void streaming_thread_loop(
     std::stop_token stop_token, Workspace &workspace,
     std::atomic<std::shared_ptr<const StringMap<int>>> &subscriber_counts_out) {
@@ -62,6 +97,7 @@ void streaming_thread_loop(
   int publish_hz = 30;
   CodecConfiguration codec_config;
   bool publish_every_frame = false;
+  Toggleable<int> max_queued_frames;
   std::vector<PointStream> point_streams;
   std::vector<StreamChannelConfiguration> channel_configs;
 
@@ -77,37 +113,16 @@ void streaming_thread_loop(
     publish_hz = stream_config.publish_hz;
     codec_config = stream_config.codec_config;
     publish_every_frame = stream_config.publish_every_frame;
+    max_queued_frames = stream_config.max_queued_frames;
     // TODO is this too heavy to do every frame? maybe we need a dirty marker
     channel_configs = stream_config.channels;
     point_streams = collect_point_streams(workspace);
   };
 
-  sync_config_vars();
-
-  if (address.empty()) address = "*";
-
-  auto &ctx = pc::networking::zmq_context();
-
-  zmq::socket_t pub_socket{ctx, zmq::socket_type::xpub};
-  pub_socket.set(zmq::sockopt::sndhwm, 32);
-  pub_socket.set(zmq::sockopt::linger, 0);
-  // adding the verboser with xpub ensures we get:
-  // subscribe events, "unsubscribe" events for clients that drop off,
-  pub_socket.set(zmq::sockopt::xpub_verboser, 1);
-
-  try {
-    pub_socket.bind(std::format("tcp://{}:{}", address, port));
-  } catch (const zmq::error_t &e) {
-    pc::logger()->error("Point streamer failed to bind tcp://{}:{} ({})",
-                        address, port, e.what());
-    return;
-  } catch (...) {
-    pc::logger()->error(
-        "Point streamer failed to bind to {}:{} (Unknown exception)", address,
-        port);
-    return;
-  }
-  pc::logger()->info("Point streamer bound to tcp://{}:{}", address, port);
+  std::optional<zmq::socket_t> pub_socket;
+  SocketSettings attempted_settings;
+  constexpr auto connection_retry_interval = 2s;
+  auto next_connection_attempt = steady_clock::now();
 
   // per-stream cached state, key is the streams address
   StringMap<std::shared_ptr<PointCloud>> last_clouds;
@@ -152,11 +167,42 @@ void streaming_thread_loop(
 
   while (!stop_token.stop_requested()) {
 
-    for (zmq::message_t msg; pub_socket.recv(msg, zmq::recv_flags::dontwait);) {
-      handle_subscriber_message(msg);
+    sync_config_vars();
+
+    const auto enabled_channel_count =
+        std::ranges::count_if(point_streams, [&](const auto &stream) {
+          return channel_enabled(channel_configs, stream.address);
+        });
+
+    // 2x the number of channels is the least that always fits a whole tick
+    const auto queued_frame_limit = [&]() {
+      if (max_queued_frames.active) return std::max(max_queued_frames.value, 1);
+      return std::max(2 * static_cast<int>(enabled_channel_count), 2);
+    };
+
+    const SocketSettings socket_settings{
+        .address = address.empty() ? "*" : address,
+        .port = port,
+        .send_high_water_mark = queued_frame_limit()};
+
+    const bool connection_retry_due =
+        !pub_socket && steady_clock::now() >= next_connection_attempt;
+    if (socket_settings != attempted_settings || connection_retry_due) {
+      pub_socket.reset();
+      pub_socket = bind_socket(socket_settings);
+      attempted_settings = socket_settings;
+      next_connection_attempt = steady_clock::now() + connection_retry_interval;
+      subscriber_counts.clear();
+      newly_subscribed_addresses.clear();
+      subscriber_counts_dirty = true;
     }
 
-    sync_config_vars();
+    if (pub_socket) {
+      for (zmq::message_t msg;
+           pub_socket->recv(msg, zmq::recv_flags::dontwait);) {
+        handle_subscriber_message(msg);
+      }
+    }
 
     std::vector<PointStream> subscribed_streams;
     std::vector<PointStream> publishing_streams;
@@ -261,7 +307,7 @@ void streaming_thread_loop(
     // if publish_every_frame is true, every publishing channel re-sends its
     // last frame. otherwise a channel only sends when its cloud changed, or
     // when a client just subscribed and needs the last frame it missed
-    {
+    if (pub_socket) {
       ProfilingZone send_zone("point_stream::send");
       for (const auto &stream : publishing_streams) {
 
@@ -291,7 +337,7 @@ void streaming_thread_loop(
             },
             hint);
         try {
-          pub_socket.send(msg, zmq::send_flags::none);
+          pub_socket->send(msg, zmq::send_flags::none);
         } catch (const zmq::error_t &e) {
           pc::logger()->warn("Point streamer send failed on '{}': {}",
                              stream.address, e.what());
