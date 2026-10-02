@@ -99,7 +99,7 @@ concept ConfigValueCompatible =
 template <class T>
 concept RegistryLeaf =
     ConfigValueCompatible<T> || std::is_same_v<T, position_bounds> ||
-    std::is_same_v<T, radius>;
+    std::is_same_v<T, radius> || std::is_same_v<T, length>;
 
 // Types rfl can traverse recursively (plain aggregates; excludes arrays,
 // std::string, std::vector, etc. which are not aggregates)
@@ -133,6 +133,8 @@ template <class T> ConfigValue to_config_value(const T &v) {
     return v;
   else if constexpr (std::is_same_v<T, radius>)
     return v;
+  else if constexpr (std::is_same_v<T, length>)
+    return static_cast<int>(v.mm);
   else if constexpr (is_cloud_stream_v<T>)
     return v;
   else
@@ -192,8 +194,7 @@ template <class T> T from_config_value(const ConfigValue &v) {
     const auto *held = std::get_if<T>(&v);
     return held ? *held : T{};
   } else if constexpr (std::is_same_v<T, radius>) {
-    // a bare number coming the other way is read as the millimetre count it
-    // would have serialised as
+    // with radius the number is millimetres
     return std::visit(
         [](auto &&val) -> radius {
           using V = std::decay_t<decltype(val)>;
@@ -201,6 +202,16 @@ template <class T> T from_config_value(const ConfigValue &v) {
           if constexpr (std::is_arithmetic_v<V>)
             return radius::from_millimetres(static_cast<float>(val));
           return radius{};
+        },
+        v);
+  } else if constexpr (std::is_same_v<T, length>) {
+    // and with length the number is millimetres
+    return std::visit(
+        [](auto &&val) -> length {
+          using V = std::decay_t<decltype(val)>;
+          if constexpr (std::is_arithmetic_v<V>)
+            return length::from_millimetres(static_cast<float>(val));
+          return length{};
         },
         v);
   } else {
@@ -282,7 +293,7 @@ void register_config(ConfigRegistry &reg, std::string_view prefix, T &cfg) {
             reg, path, [ptr] { return *ptr; },
             [ptr](const ValType &held) { *ptr = held; });
       }
-    } else if constexpr (std::is_same_v<ValType, position_bounds>) {
+    } else if constexpr (RegistryLeaf<ValType>) {
       reg.register_field(
           path,
           {[ptr]() -> ConfigValue { return to_config_value(*ptr); },
@@ -291,11 +302,6 @@ void register_config(ConfigRegistry &reg, std::string_view prefix, T &cfg) {
       register_variant(reg, path, ptr->variant());
     } else if constexpr (RflTraversable<ValType>) {
       register_config(reg, path, *ptr);
-    } else if constexpr (ConfigValueCompatible<ValType>) {
-      reg.register_field(
-          path,
-          {[ptr]() -> ConfigValue { return to_config_value(*ptr); },
-           [ptr](ConfigValue v) { *ptr = from_config_value<ValType>(v); }});
     }
     // else: std::vector, std::unordered_map, etc. — skip silently
   });
