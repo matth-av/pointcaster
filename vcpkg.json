@@ -33,6 +33,7 @@
 				"concurrentqueue",
 				"corrade",
 				"gizmo3d",
+				"glm",
 				"kddockwidgets",
 				"liblo",
 				"libcpplocate",

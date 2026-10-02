@@ -20,6 +20,7 @@
 #include <plugins/operators/chroma_key/chroma_key_config.h>
 #include <plugins/operators/cluster_extraction/cluster_extraction_config.h>
 #include <plugins/operators/fringe_removal/fringe_removal_config.h>
+#include <plugins/operators/noise/noise_config.h>
 #include <plugins/operators/range_filter/range_filter_config.h>
 
 #include <camera/camera_config.h>
@@ -52,7 +53,8 @@ using ConfigurationVariant = std::variant<
     operators::FringeRemovalConfiguration,
     operators::ClusterExtractionConfiguration,
     operators::RangeFilterConfiguration,
-    operators::ChromaKeyConfiguration>;
+    operators::ChromaKeyConfiguration,
+    operators::NoiseConfiguration>;
 
 // compile time utilities
 
