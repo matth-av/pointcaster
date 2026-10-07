@@ -11,7 +11,12 @@
 namespace pc {
 
 using int2 = std::pair<int, int>;
-using float2 = std::pair<float, float>;
+
+struct float2 {
+  float x = 0;
+  float y = 0;
+  auto operator<=>(const float2 &f) const = default;
+};
 
 struct float3 {
   float x = 0;
@@ -196,6 +201,16 @@ struct color_rgb {
   auto operator<=>(const color_rgb &c) const = default;
 
   operator color() const { return {r, g, b, 255}; };
+};
+
+struct color_bgra {
+  unsigned char b = 0;
+  unsigned char g = 0;
+  unsigned char r = 0;
+  unsigned char a = 0;
+  auto operator<=>(const color_bgra &c) const = default;
+
+  operator color() const { return {r, g, b, a}; };
 };
 
 } // namespace pc
