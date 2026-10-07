@@ -88,6 +88,7 @@ set(CONFIG_ADAPTER_INPUTS
     plugins/operators/cluster_extraction/cluster_extraction_config.h
     plugins/operators/range_filter/range_filter_config.h
     plugins/operators/chroma_key/chroma_key_config.h
+    plugins/operators/noise/noise_config.h
 )
 
 add_qml_adapters(

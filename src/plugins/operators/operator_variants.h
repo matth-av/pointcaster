@@ -18,6 +18,7 @@
 #include "fringe_removal/fringe_removal_config.h"
 #include "range_filter/range_filter_config.h"
 #include "chroma_key/chroma_key_config.h"
+#include "noise/noise_config.h"
 
 namespace pc::operators {
 
@@ -28,7 +29,8 @@ namespace pc::operators {
 // we can't garuntee that all variants live inside this codebase
 using OperatorConfigurationVariant =
     std::variant<FringeRemovalConfiguration, ClusterExtractionConfiguration,
-                 RangeFilterConfiguration, ChromaKeyConfiguration>;
+                 RangeFilterConfiguration, ChromaKeyConfiguration,
+                 NoiseConfiguration>;
 
 // compile time utilities
 

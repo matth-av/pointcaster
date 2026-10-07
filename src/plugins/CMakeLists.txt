@@ -55,6 +55,7 @@ add_subdirectory(operators/fringe_removal)
 add_subdirectory(operators/cluster_extraction)
 add_subdirectory(operators/range_filter)
 add_subdirectory(operators/chroma_key)
+add_subdirectory(operators/noise)
 
 
 # the $CORRADE_PLUGINS and $CORRADE_STATIC_PLUGINS lists should 

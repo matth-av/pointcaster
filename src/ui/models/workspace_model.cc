@@ -60,6 +60,7 @@
 #include <plugins/operators/chroma_key/chroma_key_config_adapter.gen.h>
 #include <plugins/operators/cluster_extraction/cluster_extraction_config_adapter.gen.h>
 #include <plugins/operators/fringe_removal/fringe_removal_config_adapter.gen.h>
+#include <plugins/operators/noise/noise_config_adapter.gen.h>
 #include <plugins/operators/range_filter/range_filter_config_adapter.gen.h>
 
 namespace pc::ui {
@@ -104,6 +105,10 @@ static ConfigAdapter *make_operator_config_adapter(
                                  pc::operators::ChromaKeyConfiguration>) {
           adapter = new pc::operators::ChromaKeyConfigurationAdapter(config,
                                                                      parent);
+        } else if constexpr (std::same_as<ConfigType,
+                                          pc::operators::NoiseConfiguration>) {
+          adapter =
+              new pc::operators::NoiseConfigurationAdapter(config, parent);
         }
       },
       config_variant);
