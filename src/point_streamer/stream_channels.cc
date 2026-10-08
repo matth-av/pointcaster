@@ -52,12 +52,9 @@ std::vector<PointStream> collect_point_streams(Workspace &workspace) {
         devices::device_ids_in_group(workspace.config, group.id);
     if (child_ids.empty()) continue;
 
-    // every child's current cloud is copied into one merged cloud per group
-    pc::profiling::ProfilingZone merge_zone(
-        "collect_point_streams::merge_group");
-    merge_zone.text(group.label.empty() ? group.id : group.label);
-
-    std::shared_ptr<PointCloud> merged;
+    // every child's current cloud pointers are copied to merge per device group
+    // (the merge happens on the point streamer thread in point_streamer.cc)
+    std::vector<std::shared_ptr<PointCloud>> child_clouds;
     for (const auto &child_id : child_ids) {
       for (auto &device : workspace.devices) {
         if (!device) continue;
@@ -66,19 +63,13 @@ std::vector<PointStream> collect_point_streams(Workspace &workspace) {
                    device->config());
         if (device_id != child_id) continue;
         const auto cloud = device->point_cloud();
-        if (cloud && !cloud->empty()) {
-          if (!merged)
-            merged = std::make_shared<PointCloud>(*cloud);
-          else
-            *merged += *cloud;
-        }
+        if (cloud && !cloud->empty()) child_clouds.push_back(cloud);
         break;
       }
     }
 
-    if (merged) merge_zone.text(std::to_string(merged->size()) + " points");
     sources.push_back({devices::device_address(workspace.config, group.id),
-                       std::move(merged)});
+                       nullptr, std::move(child_clouds)});
   }
 
   return sources;

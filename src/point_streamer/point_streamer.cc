@@ -129,6 +129,14 @@ void streaming_thread_loop(
   // pre-serialized data: address + '\0' + serialized payload
   StringMap<std::shared_ptr<std::vector<std::byte>>> last_data;
 
+  // a published device group's merged cloud, and the child clouds it
+  // was merged from
+  struct MergedGroup {
+    std::vector<std::shared_ptr<PointCloud>> child_clouds;
+    std::shared_ptr<PointCloud> cloud;
+  };
+  StringMap<MergedGroup> merged_groups;
+
   // an empty point cloud that is sent on the frame a channel transitions
   // from publishing to not publishing
   const auto stopped_cloud = std::make_shared<PointCloud>();
@@ -171,8 +179,8 @@ void streaming_thread_loop(
 
     // 2x the number of channels is the least that always fits a whole tick
 
-    // TODO only applied after re-binding... need to work some way to 
-    // allow this to be adjusted at runtime 
+    // TODO only applied after re-binding... need to work some way to
+    // allow this to be adjusted at runtime
 
     const auto queued_frame_limit = [&]() {
       if (max_queued_frames.active) return std::max(max_queued_frames.value, 1);
@@ -215,6 +223,23 @@ void streaming_thread_loop(
                    channel_enabled(channel_configs, stream.address);
           }) |
           std::ranges::to<std::vector>();
+    }
+
+    // groups are merged into their concatenated cloud here
+    for (auto &stream : publishing_streams) {
+      if (stream.child_clouds.empty()) continue;
+      auto &merged_group = merged_groups[stream.address];
+      if (merged_group.child_clouds != stream.child_clouds) {
+        ProfilingZone merge_zone("point_stream::merge_group");
+        merge_zone.text(stream.address);
+        auto merged =
+            std::make_shared<PointCloud>(*stream.child_clouds.front());
+        for (const auto &cloud : stream.child_clouds | std::views::drop(1))
+          *merged += *cloud;
+        merge_zone.text(std::to_string(merged->size()) + " points");
+        merged_group = {stream.child_clouds, std::move(merged)};
+      }
+      stream.cloud = merged_group.cloud;
     }
 
     // any channel that was publishing, but isn't publishing any more sends one
@@ -352,6 +377,7 @@ void streaming_thread_loop(
     for (const auto &stream : stopped_streams) {
       last_clouds.erase(stream.address);
       last_data.erase(stream.address);
+      merged_groups.erase(stream.address);
     }
 
     if (subscriber_counts_dirty) {

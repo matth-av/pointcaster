@@ -16,6 +16,7 @@ namespace pc::networking {
 struct PointStream {
   std::string address;
   std::shared_ptr<PointCloud> cloud;
+  std::vector<std::shared_ptr<PointCloud>> child_clouds;
 };
 
 std::vector<PointStream> collect_point_streams(Workspace &workspace);
