@@ -1,5 +1,6 @@
 #include "stream_channels.h"
 
+#include <core/profiling/profiling_zone.h>
 #include <plugins/devices/device_tree.h>
 #include <pointcaster/point_cloud.h>
 #include <session/session.h>
@@ -10,6 +11,7 @@ namespace pc::networking {
 // return all possible PointCloud stream channels that are available for
 // use through the workspace
 std::vector<PointStream> collect_point_streams(Workspace &workspace) {
+  pc::profiling::ProfilingZone zone("collect_point_streams");
   std::vector<PointStream> sources;
   // TODO maybe this lock situation needs to be re thought through. we access
   // workspace.config here without the lock, lock below, then access it later
@@ -50,6 +52,11 @@ std::vector<PointStream> collect_point_streams(Workspace &workspace) {
         devices::device_ids_in_group(workspace.config, group.id);
     if (child_ids.empty()) continue;
 
+    // every child's current cloud is copied into one merged cloud per group
+    pc::profiling::ProfilingZone merge_zone(
+        "collect_point_streams::merge_group");
+    merge_zone.text(group.label.empty() ? group.id : group.label);
+
     std::shared_ptr<PointCloud> merged;
     for (const auto &child_id : child_ids) {
       for (auto &device : workspace.devices) {
@@ -69,6 +76,7 @@ std::vector<PointStream> collect_point_streams(Workspace &workspace) {
       }
     }
 
+    if (merged) merge_zone.text(std::to_string(merged->size()) + " points");
     sources.push_back({devices::device_address(workspace.config, group.id),
                        std::move(merged)});
   }

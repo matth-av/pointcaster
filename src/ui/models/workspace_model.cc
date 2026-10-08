@@ -24,6 +24,7 @@
 #include <config/config_labels.h>
 #include <config/transform_config.h>
 #include <core/logger/logger.h>
+#include <core/profiling/profiling_zone.h>
 #include <core/util/geometry_utils.h>
 #include <core/util/string_utils.h>
 #include <core/uuid/uuid.h>
@@ -826,6 +827,8 @@ QString WorkspaceModel::adapterStableId(DeviceAdapter *adapter) {
 
 void WorkspaceModel::applyWorkspaceConfigAndRebuild(
     pc::WorkspaceConfiguration new_config, RebuildScope scope) {
+  pc::profiling::ProfilingZone zone(
+      "WorkspaceModel::applyWorkspaceConfigAndRebuild");
   const bool sync_devices =
       (scope == RebuildScope::Devices || scope == RebuildScope::All);
   {
@@ -865,26 +868,34 @@ void WorkspaceModel::applyWorkspaceConfigAndRebuild(
     }
   }
 
-  switch (scope) {
-  case RebuildScope::None: {
-    break;
+  {
+    pc::profiling::ProfilingZone adapters_zone("WorkspaceModel::sync_adapters");
+    switch (scope) {
+    case RebuildScope::None: {
+      break;
+    }
+    case RebuildScope::Sessions: {
+      syncSessionAdapters();
+      break;
+    }
+    case RebuildScope::Devices: {
+      syncDeviceAdapters();
+      break;
+    }
+    case RebuildScope::All: {
+      syncAdapters();
+      break;
+    }
+    }
   }
-  case RebuildScope::Sessions: {
-    syncSessionAdapters();
-    break;
+  {
+    // qml bindings on these paths re-evaluate inside the emits
+    pc::profiling::ProfilingZone paths_zone(
+        "WorkspaceModel::emit_path_signals");
+    emit publishPathsChanged();
+    emit pushPathsChanged();
+    emit renderPathsChanged();
   }
-  case RebuildScope::Devices: {
-    syncDeviceAdapters();
-    break;
-  }
-  case RebuildScope::All: {
-    syncAdapters();
-    break;
-  }
-  }
-  emit publishPathsChanged();
-  emit pushPathsChanged();
-  emit renderPathsChanged();
   _streamChannelModel->refresh();
 }
 // ----------------- WorkspaceModel -----------------
@@ -1428,6 +1439,7 @@ bool WorkspaceModel::sessionDrawsRenderPath(const QString &sessionId,
 
 void WorkspaceModel::setSessionDeviceEnabled(const QString &node_id,
                                              bool enabled) {
+  pc::profiling::ProfilingZone zone("WorkspaceModel::setSessionDeviceEnabled");
   auto new_config = _workspace.config;
   const int session_index =
       find_session_index_by_id(new_config, _selectedSessionId.toStdString());
@@ -1445,6 +1457,10 @@ void WorkspaceModel::setSessionDeviceEnabled(const QString &node_id,
   session_config.disabled_devices = std::move(disabled_nodes);
 
   applyWorkspaceConfigAndRebuild(std::move(new_config), RebuildScope::Sessions);
+
+  // qml rebuilds the device tree rows inside this emit
+  pc::profiling::ProfilingZone rows_zone(
+      "WorkspaceModel::emit_deviceTreeRowsChanged");
   emit deviceTreeRowsChanged();
 }
 

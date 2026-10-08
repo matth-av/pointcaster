@@ -2,12 +2,19 @@
 
 #include <algorithm>
 #include <core/logger/logger.h>
+#include <core/profiling/profiling_zone.h>
 #include <pointcaster/task_pool.h>
+#include <string>
 
 namespace pc::devices::ply {
 
+using pc::profiling::ProfilingZone;
+
 bool PlySequenceLoader::open(const std::filesystem::path &directory,
                              const Config &config) {
+  ProfilingZone open_zone("PlySequenceLoader::open");
+  open_zone.text(directory.string());
+
   _position_units.store(config.position_units, std::memory_order_relaxed);
   _attributes.store(std::make_shared<const AttributeTable>(config.attributes),
                     std::memory_order_relaxed);
@@ -15,16 +22,22 @@ bool PlySequenceLoader::open(const std::filesystem::path &directory,
   _file_paths.clear();
   _file_info = {};
 
-  if (!std::filesystem::is_directory(directory)) {
-    pc::logger()->error("not a directory: {}", directory.string());
-    return false;
-  }
+  {
+    ProfilingZone list_zone("PlySequenceLoader::list_directory");
 
-  for (const auto &entry : std::filesystem::directory_iterator(directory)) {
-    if (entry.path().extension() == ".ply")
-      _file_paths.emplace_back(entry.path().string());
+    if (!std::filesystem::is_directory(directory)) {
+      pc::logger()->error("not a directory: {}", directory.string());
+      return false;
+    }
+
+    for (const auto &entry : std::filesystem::directory_iterator(directory)) {
+      if (entry.path().extension() == ".ply")
+        _file_paths.emplace_back(entry.path().string());
+    }
+    std::sort(_file_paths.begin(), _file_paths.end());
+
+    list_zone.text(std::to_string(_file_paths.size()) + " files");
   }
-  std::sort(_file_paths.begin(), _file_paths.end());
 
   if (_file_paths.empty()) {
     pc::logger()->warn("no .ply files in {}", directory.string());
@@ -53,14 +66,22 @@ bool PlySequenceLoader::open(const std::filesystem::path &directory,
 std::shared_ptr<PointCloud> PlySequenceLoader::get_frame(size_t frame) {
   if (frame >= _file_paths.size()) return nullptr;
 
+  ProfilingZone zone("PlySequenceLoader::get_frame");
+  zone.text("frame " + std::to_string(frame));
+
   prefetch_from(frame);
 
   {
     std::shared_lock lock(_mutex);
     const auto slot = frame % _ring.size();
-    if (_ring_index[slot] == frame && _ring[slot]) return _ring[slot];
+    if (_ring_index[slot] == frame && _ring[slot]) {
+      zone.text("buffered");
+      return _ring[slot];
+    }
   }
 
+  // not buffered yet, so the caller blocks on a synchronous read
+  zone.text("not buffered");
   return load_into_slot(frame, _generation.load(std::memory_order_relaxed));
 }
 
@@ -74,6 +95,9 @@ void PlySequenceLoader::invalidate() {
 
 std::shared_ptr<PointCloud>
 PlySequenceLoader::load_into_slot(size_t frame, size_t generation) {
+  ProfilingZone zone("PlySequenceLoader::load_into_slot");
+  zone.text("frame " + std::to_string(frame));
+
   const auto attributes = _attributes.load(std::memory_order_relaxed);
   auto cloud = read_point_cloud(
       _file_paths[frame], _position_units.load(std::memory_order_relaxed),
@@ -124,6 +148,8 @@ void PlySequenceLoader::set_loop(size_t start, size_t end) {
 }
 
 void PlySequenceLoader::prefetch_from(size_t current) {
+  ProfilingZone zone("PlySequenceLoader::prefetch_from");
+
   const auto generation = _generation.load(std::memory_order_relaxed);
 
   const auto loop_start = _loop_start.load(std::memory_order_relaxed);

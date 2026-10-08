@@ -2,7 +2,7 @@
 #include "plugins/devices/device_variants.h"
 
 #include <core/logger/logger.h>
-// #include <core/profiling/profiling_zone.h>
+#include <core/profiling/profiling_zone.h>
 #include <cstring>
 #include <filesystem>
 #include <plugins/backend/backend_types.h>
@@ -14,7 +14,7 @@
 
 namespace pc::devices {
 
-// using pc::profiling::ProfilingZone;
+using pc::profiling::ProfilingZone;
 
 namespace {
 
@@ -54,7 +54,19 @@ PlyDevice::~PlyDevice() {
 }
 
 bool PlyDevice::load(std::string_view url) {
-  std::lock_guard lock(_device_mutex);
+  ProfilingZone load_zone("PlyDevice::load");
+  load_zone.text(url);
+
+  // TODO replace the lock zone and this deferred lock with a
+  // tracy lockable to watch it idiomatically instead
+
+  std::unique_lock lock(_device_mutex, std::defer_lock);
+  {
+    // the tick thread holds this lock while it reads a frame that isn't
+    // buffered yet
+    ProfilingZone lock_zone("PlyDevice::load::wait_for_device_lock");
+    lock.lock();
+  }
   pc::logger()->trace("PlyDevice::load: enter url='{}' tid={}", url,
                       std::hash<std::thread::id>{}(std::this_thread::get_id()));
 
@@ -67,7 +79,13 @@ bool PlyDevice::load(std::string_view url) {
   auto path_str = std::string(
       url.starts_with(file_prefix) ? url.substr(file_prefix.size()) : url);
 
-  if (std::filesystem::is_directory(path_str)) {
+  bool is_directory = false;
+  {
+    ProfilingZone stat_zone("PlyDevice::load::is_directory");
+    is_directory = std::filesystem::is_directory(path_str);
+  }
+
+  if (is_directory) {
     pc::logger()->trace("PlyDevice::load: directory mode");
     if (!load_directory(path_str)) return false;
     _loaded_file_path = std::string(url);
@@ -109,6 +127,8 @@ bool PlyDevice::load(std::string_view url) {
 }
 
 bool PlyDevice::load_directory(const std::filesystem::path &dir) {
+  ProfilingZone zone("PlyDevice::load_directory");
+
   auto &config = std::get<PlyDeviceConfiguration>(_config);
 
   _input_cloud.reset();
@@ -134,6 +154,7 @@ bool PlyDevice::load_directory(const std::filesystem::path &dir) {
 
 void PlyDevice::on_session_membership_changed(bool in_any_session) {
   if (!in_any_session) return;
+  ProfilingZone zone("PlyDevice::on_session_membership_changed");
 
   std::string path_to_load;
   {
@@ -214,6 +235,7 @@ void PlyDevice::tick(float delta_time) {
 
 void PlyDevice::reload_current_frame() {
   if (!_sequence_loader) return;
+  ProfilingZone zone("PlyDevice::reload_current_frame");
   if (auto frame =
           _sequence_loader->get_frame(static_cast<size_t>(_current_frame))) {
     _input_cloud = std::move(frame);
@@ -370,6 +392,8 @@ void PlyDevice::apply_transform() {
     return;
   }
 
+  ProfilingZone zone("PlyDevice::apply_transform");
+
   const auto config = std::get<PlyDeviceConfiguration>(_config);
   const auto point_count = _input_cloud->size();
 
@@ -385,6 +409,7 @@ void PlyDevice::apply_transform() {
 
   pc::float4x4 world;
   {
+    ProfilingZone world_zone("PlyDevice::resolve_world_transform");
     std::scoped_lock lock(_workspace->config_access);
     world =
         pc::devices::effective_world_transform(_workspace->config, config.id);

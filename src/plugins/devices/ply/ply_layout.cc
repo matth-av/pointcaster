@@ -6,11 +6,13 @@
 #include <boost/interprocess/mapped_region.hpp>
 #include <cmath>
 #include <core/logger/logger.h>
+#include <core/profiling/profiling_zone.h>
 #include <cstring>
 #include <miniply.h>
 #include <oneapi/tbb/parallel_for.h>
 #include <ranges>
 #include <span>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -19,6 +21,7 @@ namespace pc::devices::ply {
 namespace {
 
 using miniply::PLYPropertyType;
+using pc::profiling::ProfilingZone;
 
 bool is_floating_point(PLYPropertyType type) {
   return type == PLYPropertyType::Float || type == PLYPropertyType::Double;
@@ -191,6 +194,8 @@ read_mapped(const std::string &path, const miniply::PLYReader &reader,
             std::span<const std::span<float>> attribute_values) {
   using namespace boost::interprocess;
 
+  ProfilingZone map_zone("ply::map_file");
+
   file_mapping mapping;
   try {
     mapping = file_mapping(path.c_str(), read_only);
@@ -206,6 +211,8 @@ read_mapped(const std::string &path, const miniply::PLYReader &reader,
   const size_t vertex_count = element->count;
   const size_t row_stride = element->rowStride;
   const auto data_offset = data_offset_of(base, file_size);
+
+  map_zone.end();
 
   if (data_offset == 0 || data_offset + vertex_count * row_stride > file_size) {
     pc::logger()->error("truncated PLY: {}", path);
@@ -248,6 +255,9 @@ read_mapped(const std::string &path, const miniply::PLYReader &reader,
     std::ranges::fill(cloud->colors, color{255, 255, 255, 255});
   }
 
+  ProfilingZone decode_zone("ply::decode_vertices");
+  decode_zone.text(std::to_string(vertex_count) + " vertices");
+
   tbb::parallel_for(
       tbb::blocked_range<size_t>(0, vertex_count),
       [&](const tbb::blocked_range<size_t> &range) {
@@ -289,6 +299,8 @@ std::shared_ptr<PointCloud>
 read_ascii(miniply::PLYReader &reader, const VertexLayout &layout,
            float position_scale, const std::shared_ptr<PointCloud> &cloud,
            std::span<const std::span<float>> attribute_values) {
+  ProfilingZone zone("ply::read_ascii");
+
   if (!reader.load_element()) {
     pc::logger()->error("could not read ascii PLY vertex data");
     return nullptr;
@@ -372,6 +384,9 @@ void quantise_attribute(PointCloud &cloud, std::string_view name,
 } // namespace
 
 std::optional<FileInfo> scan_file_info(const std::string &path) {
+  ProfilingZone zone("ply::scan_file_info");
+  zone.text(path);
+
   miniply::PLYReader reader(path.c_str());
   if (!seek_vertex_element(reader, path)) return std::nullopt;
 
@@ -396,8 +411,13 @@ std::optional<FileInfo> scan_file_info(const std::string &path) {
 std::shared_ptr<PointCloud>
 read_point_cloud(const std::string &path, PositionUnits units,
                  std::span<const AttributeConfiguration> attributes) {
+  ProfilingZone zone("ply::read_point_cloud");
+  zone.text(path);
+
+  ProfilingZone header_zone("ply::read_header");
   miniply::PLYReader reader(path.c_str());
   if (!seek_vertex_element(reader, path)) return nullptr;
+  header_zone.end();
 
   auto layout = layout_of(reader);
   if (!layout.has_position) {
@@ -449,6 +469,8 @@ read_point_cloud(const std::string &path, PositionUnits units,
           : read_mapped(path, reader, layout, position_scale, cloud,
                         attribute_values);
   if (!filled) return nullptr;
+
+  ProfilingZone quantise_zone("ply::quantise_attributes");
 
   for (const auto *configuration : targeted) {
     const auto target = configuration->target;

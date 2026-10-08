@@ -6,6 +6,7 @@
 #include <memory>
 #include <pipeline/concurrent_operator_pipeline.h>
 #include <plugins/devices/device_plugin.h>
+#include <profiling/profiling_zone.h>
 #include <plugins/devices/device_tree.h>
 #include <stop_token>
 #include <workspace/workspace.h>
@@ -27,6 +28,7 @@ Session::Session(Workspace &workspace, const SessionConfiguration &config)
 }
 
 void Session::update_config(const SessionConfiguration &config) {
+  pc::profiling::ProfilingZone zone("Session::update_config");
   const int prev_config_frame = _config.timeline.current_frame;
   _config = config;
   sync_operators(_config.operators);

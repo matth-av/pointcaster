@@ -3,6 +3,7 @@
 
 #include <QTimer>
 #include <algorithm>
+#include <core/profiling/profiling_zone.h>
 #include <mutex>
 #include <point_streamer/point_streamer.h>
 #include <point_streamer/stream_channels.h>
@@ -53,6 +54,7 @@ QHash<int, QByteArray> StreamChannelListModel::roleNames() const {
 }
 
 void StreamChannelListModel::refresh() {
+  pc::profiling::ProfilingZone zone("StreamChannelListModel::refresh");
   QVector<ChannelEntry> channels;
 
   if (_workspace) {

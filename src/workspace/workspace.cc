@@ -19,6 +19,7 @@
 
 #include <app_settings/app_settings.h>
 #include <core/logger/logger.h>
+#include <core/profiling/profiling_zone.h>
 #include <core/uuid/uuid.h>
 #include <metrics/prometheus_server.h>
 #include <plugins/devices/device_plugin.h>
@@ -125,7 +126,10 @@ void Workspace::dispose_device(
 
 void Workspace::apply_new_config(const WorkspaceConfiguration &new_config,
                                  bool should_sync_devices) {
+  pc::profiling::ProfilingZone zone("Workspace::apply_new_config");
   {
+    pc::profiling::ProfilingZone assign_zone(
+        "Workspace::apply_new_config::assign");
     std::scoped_lock lock(config_access);
     config = new_config;
   }
@@ -133,7 +137,10 @@ void Workspace::apply_new_config(const WorkspaceConfiguration &new_config,
   sync_sessions();
   refresh_device_session_membership();
   rebuild_config_registry();
-  if (osc_receiver) osc_receiver->reconfigure();
+  if (osc_receiver) {
+    pc::profiling::ProfilingZone osc_zone("OscReceiver::reconfigure");
+    osc_receiver->reconfigure();
+  }
 }
 
 namespace {
@@ -158,6 +165,7 @@ void register_operators(
 // could probs be comp time registry? idk at least
 // it probs doesn't need to be rebuilt often
 void Workspace::rebuild_config_registry() {
+  pc::profiling::ProfilingZone zone("Workspace::rebuild_config_registry");
   config_registry.clear();
 
   // register configs for session values
@@ -284,6 +292,7 @@ void Workspace::rebuild_config_registry() {
 }
 
 void Workspace::sync_sessions() {
+  pc::profiling::ProfilingZone zone("Workspace::sync_sessions");
   pc::logger()->trace("Syncing sessions");
 
   std::vector<SessionConfiguration> session_configs;
@@ -328,6 +337,8 @@ void Workspace::sync_sessions() {
 }
 
 void Workspace::refresh_device_session_membership() {
+  pc::profiling::ProfilingZone zone(
+      "Workspace::refresh_device_session_membership");
   std::vector<std::pair<devices::DevicePlugin *, bool>> changed_devices;
   {
     std::scoped_lock lock(config_access);
@@ -350,6 +361,7 @@ void Workspace::refresh_device_session_membership() {
 }
 
 void Workspace::sync_devices() {
+  pc::profiling::ProfilingZone zone("Workspace::sync_devices");
   pc::logger()->trace("Syncing devices");
   std::vector<devices::DeviceConfigurationVariant> device_configs;
   {
