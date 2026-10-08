@@ -57,14 +57,14 @@ bool channel_enabled(
 struct SocketSettings {
   std::string address;
   int port = 0;
-  int send_high_water_mark = 0;
 
   bool operator==(const SocketSettings &) const = default;
 };
 
-std::optional<zmq::socket_t> bind_socket(const SocketSettings &settings) {
+std::optional<zmq::socket_t> bind_socket(const SocketSettings &settings,
+                                         int send_high_water_mark) {
   zmq::socket_t socket{zmq_context(), zmq::socket_type::xpub};
-  socket.set(zmq::sockopt::sndhwm, settings.send_high_water_mark);
+  socket.set(zmq::sockopt::sndhwm, send_high_water_mark);
   socket.set(zmq::sockopt::linger, 0);
   // adding the verboser with xpub ensures we get
   // subscribe events & "unsubscribe" events for clients that drop off,
@@ -84,7 +84,7 @@ std::optional<zmq::socket_t> bind_socket(const SocketSettings &settings) {
     return std::nullopt;
   }
   pc::logger()->info("Point streamer bound to {} (max {} queued frames)",
-                     endpoint, settings.send_high_water_mark);
+                     endpoint, send_high_water_mark);
   return socket;
 }
 
@@ -169,27 +169,28 @@ void streaming_thread_loop(
 
     sync_config_vars();
 
-    const auto enabled_channel_count =
-        std::ranges::count_if(point_streams, [&](const auto &stream) {
-          return channel_enabled(channel_configs, stream.address);
-        });
-
     // 2x the number of channels is the least that always fits a whole tick
+
+    // TODO only applied after re-binding... need to work some way to 
+    // allow this to be adjusted at runtime 
+
     const auto queued_frame_limit = [&]() {
       if (max_queued_frames.active) return std::max(max_queued_frames.value, 1);
+      const auto enabled_channel_count =
+          std::ranges::count_if(point_streams, [&](const auto &stream) {
+            return channel_enabled(channel_configs, stream.address);
+          });
       return std::max(2 * static_cast<int>(enabled_channel_count), 2);
     };
 
     const SocketSettings socket_settings{
-        .address = address.empty() ? "*" : address,
-        .port = port,
-        .send_high_water_mark = queued_frame_limit()};
+        .address = address.empty() ? "*" : address, .port = port};
 
     const bool connection_retry_due =
         !pub_socket && steady_clock::now() >= next_connection_attempt;
     if (socket_settings != attempted_settings || connection_retry_due) {
       pub_socket.reset();
-      pub_socket = bind_socket(socket_settings);
+      pub_socket = bind_socket(socket_settings, queued_frame_limit());
       attempted_settings = socket_settings;
       next_connection_attempt = steady_clock::now() + connection_retry_interval;
       subscriber_counts.clear();
