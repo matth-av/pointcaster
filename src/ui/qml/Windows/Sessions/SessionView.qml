@@ -215,6 +215,11 @@ Item {
         function onDeviceAdaptersChanged() {
             root.refreshRenderPathsForSession();
         }
+        // enabling or disabling a device in a session doesn't change the render
+        // paths or adapters, only the device tree rows
+        function onDeviceTreeRowsChanged() {
+            root.refreshRenderPathsForSession();
+        }
     }
 
     // one unit circle, scaled to whatever distance each radius disc draws

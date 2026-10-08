@@ -831,6 +831,9 @@ void WorkspaceModel::applyWorkspaceConfigAndRebuild(
       "WorkspaceModel::applyWorkspaceConfigAndRebuild");
   const bool sync_devices =
       (scope == RebuildScope::Devices || scope == RebuildScope::All);
+  bool publish_paths_changed = false;
+  bool push_paths_changed = false;
+  bool render_paths_changed = false;
   {
     std::scoped_lock lock(_workspace.config_access);
     if (_pointStreamerAdapter) {
@@ -841,6 +844,11 @@ void WorkspaceModel::applyWorkspaceConfigAndRebuild(
       _publishersConfigAdapter->setConfig(
           pc::ConfigurationVariant{new_config.publishers});
     }
+    publish_paths_changed =
+        new_config.publish_paths != _workspace.config.publish_paths;
+    push_paths_changed = new_config.push_paths != _workspace.config.push_paths;
+    render_paths_changed =
+        new_config.render_paths != _workspace.config.render_paths;
   }
   _workspace.apply_new_config(std::move(new_config), sync_devices);
 
@@ -892,9 +900,9 @@ void WorkspaceModel::applyWorkspaceConfigAndRebuild(
     // qml bindings on these paths re-evaluate inside the emits
     pc::profiling::ProfilingZone paths_zone(
         "WorkspaceModel::emit_path_signals");
-    emit publishPathsChanged();
-    emit pushPathsChanged();
-    emit renderPathsChanged();
+    if (publish_paths_changed) emit publishPathsChanged();
+    if (push_paths_changed) emit pushPathsChanged();
+    if (render_paths_changed) emit renderPathsChanged();
   }
   _streamChannelModel->refresh();
 }
