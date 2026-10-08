@@ -795,8 +795,7 @@ Column {
                 function onFieldChanged(changedPath) {
                     if (String(changedPath) !== path)
                         return;
-                    var n = Number(root.configAdapter.value(path));
-                    intEditorControl.boundValue = isNaN(n) ? 0 : Math.trunc(n);
+                    intEditorControl.boundValue = intEditorControl.numberOf(root.configAdapter.value(path));
                 }
             }
         }
