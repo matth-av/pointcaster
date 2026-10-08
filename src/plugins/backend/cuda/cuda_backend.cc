@@ -37,6 +37,26 @@ void CudaBackend::project_transform_frame_data(
   }
 }
 
+void CudaBackend::project_transform_frame_data(
+    std::span<const uint16_t> input_depth_frame,
+    std::span<const color_bgra> input_bgra_frame, PointCloud &output_cloud,
+    std::shared_ptr<const XyTable> xy_table,
+    const TransformConfiguration &transform,
+    const ColorTransformConfiguration &color_transform,
+    const pc::float4x4 &world_transform,
+    std::span<std::byte> render_output) const {
+  try {
+    cuda::project_transform_frame_data(
+        this, input_depth_frame, input_bgra_frame, output_cloud,
+        std::move(xy_table), transform, color_transform, world_transform,
+        render_output);
+  } catch (const std::exception &e) {
+    pc::logger()->error("CUDA backend error: {}", e.what());
+  } catch (...) {
+    pc::logger()->error("CUDA backend error: Unknown exception");
+  }
+}
+
 void CudaBackend::transform_point_cloud(
     const PointCloud &input_cloud, PointCloud &output_cloud,
     const TransformConfiguration &transform,

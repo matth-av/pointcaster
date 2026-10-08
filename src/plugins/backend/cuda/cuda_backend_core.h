@@ -20,6 +20,15 @@ void project_transform_frame_data(
     const ColorTransformConfiguration &color_transform,
     std::span<std::byte> render_output = {});
 
+void project_transform_frame_data(
+    const void *owner, std::span<const uint16_t> input_depth_frame,
+    std::span<const color_bgra> input_bgra_frame, PointCloud &output_cloud,
+    std::shared_ptr<const XyTable> xy_table,
+    const TransformConfiguration &transform,
+    const ColorTransformConfiguration &color_transform,
+    const pc::float4x4 &world_transform = {},
+    std::span<std::byte> render_output = {});
+
 BoundsFilterResult filter_to_bounds(const void *owner,
                                     const PointCloud &input_cloud,
                                     PointCloud &output_cloud,

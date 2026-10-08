@@ -37,6 +37,10 @@ struct DeviceTransformMemory {
   thrust::device_vector<std::byte> interleaved_render;
   thrust::device_vector<int> indices;
 
+  thrust::device_vector<color_bgra> input_bgra_data;
+  thrust::device_vector<pc::float2> xy_scales;
+  std::shared_ptr<const backend::XyTable> uploaded_xy_table;
+
   void ensure_capacity(size_t n) {
     if (n <= point_count) return;
     input_depth_data.resize(n);
@@ -82,6 +86,8 @@ void create_device_memory(const void *owner, const size_t point_count) {
 
 namespace pc::backend::cuda {
 
+using namespace pc::profiling;
+
 struct ProjectAndTransform {
 
   CameraIntrinsics color_intrinsics;
@@ -117,6 +123,48 @@ struct ProjectAndTransform {
     position = filter::transform(position, params);
 
     auto col = filter::color_transform(color{rgb.r, rgb.g, rgb.b}, params);
+
+    return thrust::make_tuple(position, col);
+  }
+};
+
+struct XyTableProjectAndTransform {
+
+  const pc::float2 *xy_scales;
+  filter::TransformFilterParameters params;
+  bool sample_cloud;
+
+  explicit XyTableProjectAndTransform(
+      const pc::float2 *table_xy_scales,
+      const TransformConfiguration &transform,
+      const ColorTransformConfiguration &color_transform)
+      : xy_scales(table_xy_scales) {
+    params = filter::TransformFilterParameters::from_config(transform,
+                                                            color_transform);
+    sample_cloud = params.sample > 1;
+  }
+
+  using OutputPointT = thrust::tuple<position, color>;
+  using InputPixelT = thrust::tuple<uint16_t, color_bgra, int>;
+
+  __host__ __device__ OutputPointT operator()(InputPixelT input) const {
+    const int i = thrust::get<2>(input);
+    if (sample_cloud && !filter::sample(i, params)) {
+      return thrust::make_tuple(filter::invalid_position_value, color{});
+    }
+    const uint16_t depth = thrust::get<0>(input);
+    const color_bgra bgra = thrust::get<1>(input);
+    const pc::float2 xy_scale = xy_scales[i];
+
+    if (depth == 0 || !util::is_valid_xy_scale(xy_scale) ||
+        !util::has_color(bgra)) {
+      return thrust::make_tuple(filter::invalid_position_value, color{});
+    }
+
+    auto position = util::project_2d_to_3d(xy_scale, depth);
+    position = filter::transform(position, params);
+
+    auto col = filter::color_transform(color{bgra.r, bgra.g, bgra.b}, params);
 
     return thrust::make_tuple(position, col);
   }
@@ -275,8 +323,6 @@ void project_transform_frame_data(
     device_memory = &it->second;
   }
 
-  using namespace pc::profiling;
-
   const size_t point_count = input_depth_frame.size();
   device_memory->ensure_capacity(point_count);
 
@@ -370,6 +416,140 @@ void project_transform_frame_data(
   output_cloud.resize(new_point_count);
 }
 
+void project_transform_frame_data(
+    const void *owner, std::span<const uint16_t> input_depth_frame,
+    std::span<const color_bgra> input_bgra_frame, PointCloud &output_cloud,
+    std::shared_ptr<const XyTable> xy_table,
+    const TransformConfiguration &transform,
+    const ColorTransformConfiguration &color_transform,
+    const pc::float4x4 &world_transform, std::span<std::byte> render_output) {
+
+  DeviceTransformMemory *device_memory;
+  {
+    std::lock_guard lock(device_memory_access);
+    auto it = instance_device_memory.find(owner);
+    if (it == instance_device_memory.end())
+      throw std::runtime_error("device memory is not initialised");
+    device_memory = &it->second;
+  }
+
+  const size_t point_count = input_depth_frame.size();
+  if (!xy_table || xy_table->xy_scales.size() < point_count) {
+    throw std::runtime_error("xy table doesn't cover the frame");
+  }
+
+  device_memory->ensure_capacity(point_count);
+  if (device_memory->input_bgra_data.size() < point_count) {
+    device_memory->input_bgra_data.resize(point_count);
+  }
+
+  const auto transform_parameters =
+      filter::TransformFilterParameters::from_config(transform,
+                                                     color_transform);
+
+  bool output_render_buffer = !render_output.empty();
+
+  {
+    ProfilingZone copy_zone("CudaBackend::copy_to_device");
+    // the table only changes when its camera restarts, so it only goes up to
+    // the gpu when a different one arrives
+    if (device_memory->uploaded_xy_table != xy_table) {
+      const auto &xy_scales = xy_table->xy_scales;
+      device_memory->xy_scales.resize(xy_scales.size());
+      thrust::copy(xy_scales.begin(), xy_scales.end(),
+                   device_memory->xy_scales.begin());
+      device_memory->uploaded_xy_table = xy_table;
+    }
+    thrust::copy(input_depth_frame.begin(), input_depth_frame.end(),
+                 device_memory->input_depth_data.begin());
+    thrust::copy(input_bgra_frame.begin(), input_bgra_frame.end(),
+                 device_memory->input_bgra_data.begin());
+  }
+
+  auto frame_data_input_begin = thrust::make_zip_iterator(thrust::make_tuple(
+      device_memory->input_depth_data.begin(),
+      device_memory->input_bgra_data.begin(), device_memory->indices.begin()));
+  auto frame_data_input_end = frame_data_input_begin + point_count;
+
+  auto output_points_begin = thrust::make_zip_iterator(
+      thrust::make_tuple(device_memory->output_positions.begin(),
+                         device_memory->output_colors.begin()));
+
+  size_t new_point_count;
+  position_bounds new_cloud_bounds;
+
+  {
+    ProfilingZone transform_zone("CudaBackend::transform_and_filter");
+
+    thrust::transform(
+        thrust::cuda::par, frame_data_input_begin, frame_data_input_end,
+        output_points_begin,
+        XyTableProjectAndTransform{
+            thrust::raw_pointer_cast(device_memory->xy_scales.data()),
+            transform, color_transform});
+
+    auto output_points_end = output_points_begin + point_count;
+
+    auto new_end =
+        thrust::partition(thrust::cuda::par, output_points_begin,
+                          output_points_end, BoundsCheck{transform_parameters});
+
+    new_point_count = new_end - output_points_begin;
+
+    // ancestor group placement goes on after the crop, so cropping stays in
+    // the device's own space
+    const bool has_world_transform = !(world_transform == pc::float4x4{});
+    if (has_world_transform) {
+      thrust::transform(
+          thrust::cuda::par, device_memory->output_positions.begin(),
+          device_memory->output_positions.begin() + new_point_count,
+          device_memory->output_positions.begin(),
+          ApplyWorldTransform{world_transform});
+    }
+
+    new_cloud_bounds = thrust::transform_reduce(
+        thrust::cuda::par, device_memory->output_positions.begin(),
+        device_memory->output_positions.begin() + new_point_count,
+        PositionAsBounds{}, position_bounds{}, MergeBounds{});
+
+    if (output_render_buffer) {
+      thrust::sequence(device_memory->indices.begin(),
+                       device_memory->indices.begin() + new_point_count);
+
+      thrust::for_each(
+          thrust::cuda::par, device_memory->indices.begin(),
+          device_memory->indices.begin() + new_point_count,
+          InterleaveForRender{
+              thrust::raw_pointer_cast(device_memory->output_positions.data()),
+              thrust::raw_pointer_cast(device_memory->output_colors.data()),
+              thrust::raw_pointer_cast(
+                  device_memory->interleaved_render.data())});
+    }
+  }
+
+  {
+    ProfilingZone output_zone("CudaBackend::copy_back_to_host");
+
+    thrust::copy(device_memory->output_positions.begin(),
+                 device_memory->output_positions.begin() + new_point_count,
+                 output_cloud.positions.begin());
+    thrust::copy(device_memory->output_colors.begin(),
+                 device_memory->output_colors.begin() + new_point_count,
+                 output_cloud.colors.begin());
+
+    output_cloud.bounds = new_cloud_bounds;
+
+    if (output_render_buffer) {
+      thrust::copy(device_memory->interleaved_render.begin(),
+                   device_memory->interleaved_render.begin() +
+                       new_point_count * 16,
+                   render_output.begin());
+    }
+  }
+
+  output_cloud.resize(new_point_count);
+}
+
 BoundsFilterResult filter_to_bounds(const void *owner,
                                     const PointCloud &input_cloud,
                                     PointCloud &output_cloud,
@@ -384,8 +564,6 @@ BoundsFilterResult filter_to_bounds(const void *owner,
       throw std::runtime_error("device memory is not initialised");
     device_memory = &it->second;
   }
-
-  using namespace pc::profiling;
 
   const size_t input_count = input_cloud.size();
   BoundsFilterResult result{.input_count = input_count};
@@ -496,8 +674,6 @@ void transform_point_cloud(const void *owner, const PointCloud &input_cloud,
 
   const size_t point_count = input_cloud.size();
   device_memory->ensure_capacity(point_count);
-
-  using namespace pc::profiling;
 
   const auto transform_parameters =
       filter::TransformFilterParameters::from_config(transform,

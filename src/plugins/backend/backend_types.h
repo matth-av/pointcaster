@@ -1,9 +1,11 @@
 #pragma once
 
 #include <functional>
+#include <limits>
 #include <pointcaster/core_types.h>
 #include <span>
 #include <tuple>
+#include <vector>
 
 namespace pc {
 
@@ -20,6 +22,16 @@ struct CameraIntrinsics {
 struct Extrinsics {
   float r[9]; // row-major 3x3
   float t[3];
+};
+
+inline constexpr float invalid_xy_scale_component =
+    std::numeric_limits<float>::max();
+
+// used to undistort camera sensors that can't use pinhole projection
+// (e.g. kinect which ships its own xy_table for manual undistortion we can
+// paralellise outside its own api)
+struct XyTable {
+  std::vector<float2> xy_scales;
 };
 
 using PointType = std::tuple<position, color>;

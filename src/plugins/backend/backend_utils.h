@@ -69,4 +69,30 @@ __host__ __device__
                                                ext.r[8] * z + ext.t[2]))};
 }
 
+#ifdef __CUDACC__
+__host__ __device__
+#endif
+    inline position project_2d_to_3d(const float2 &xy_scale, uint16_t depth) {
+  const float z = static_cast<float>(depth);
+  return {static_cast<int16_t>(round_pos(xy_scale.x * z)),
+          static_cast<int16_t>(-round_pos(xy_scale.y * z)),
+          static_cast<int16_t>(-round_pos(z))};
+}
+
+#ifdef __CUDACC__
+__host__ __device__
+#endif
+    inline bool is_valid_xy_scale(const float2 &xy_scale) {
+  return xy_scale.x != invalid_xy_scale_component;
+}
+
+// a bgra pixel of all zeros is how colour-to-depth mapping marks a depth pixel
+// no colour pixel landed on (a real black pixel comes out as 1, 0, 0, 0)
+#ifdef __CUDACC__
+__host__ __device__
+#endif
+    inline bool has_color(const color_bgra &pixel) {
+  return pixel.b != 0 || pixel.g != 0 || pixel.r != 0 || pixel.a != 0;
+}
+
 } // namespace pc::backend::util

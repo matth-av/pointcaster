@@ -58,6 +58,10 @@ void transform_from(F &&get_point, size_t point_count, PointCloud &output_cloud,
       return;
     }
     auto [position, color] = get_point(i);
+    if (!filter::is_valid(position)) {
+      output_cloud.positions[i] = filter::invalid_position_value;
+      return;
+    }
     output_cloud.positions[i] =
         filter::transform(position, transform_parameters);
     output_cloud.colors[i] =
@@ -293,6 +297,34 @@ void CpuBackend::project_transform_frame_data(
         util::project_2d_to_3d(px, py, input_depth_frame[i], color_intrinsics);
     const auto &rgb = input_rgb_frame[i];
     return {pos, color{rgb.r, rgb.g, rgb.b}};
+  };
+
+  transform_from(convert_point_data, point_count, output_cloud, output_cloud,
+                 transform, color_transform, world_transform);
+}
+
+void CpuBackend::project_transform_frame_data(
+    std::span<const uint16_t> input_depth_frame,
+    std::span<const color_bgra> input_bgra_frame, PointCloud &output_cloud,
+    std::shared_ptr<const XyTable> xy_table,
+    const TransformConfiguration &transform,
+    const ColorTransformConfiguration &color_transform,
+    const pc::float4x4 &world_transform,
+    [[maybe_unused]] std::span<std::byte> render_output) const {
+
+  const auto point_count = output_cloud.size();
+  const auto &xy_scales = xy_table->xy_scales;
+
+  const auto convert_point_data = [&](int i) -> std::pair<position, color> {
+    const auto depth = input_depth_frame[i];
+    const auto &xy_scale = xy_scales[i];
+    const auto &bgra = input_bgra_frame[i];
+    if (depth == 0 || !util::is_valid_xy_scale(xy_scale) ||
+        !util::has_color(bgra)) {
+      return {filter::invalid_position_value, color{}};
+    }
+    return {util::project_2d_to_3d(xy_scale, depth),
+            color{bgra.r, bgra.g, bgra.b}};
   };
 
   transform_from(convert_point_data, point_count, output_cloud, output_cloud,

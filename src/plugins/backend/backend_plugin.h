@@ -13,6 +13,7 @@
 #include <cpplocate/cpplocate.h>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <pointcaster/core_types.h>
 #include <pointcaster/point_cloud.h>
 #include <span>
@@ -106,6 +107,18 @@ public:
       std::span<const uint16_t> input_depth_frame,
       std::span<const color_rgb> input_rgb_frame, PointCloud &output_cloud,
       const CameraIntrinsics &color_intrinsics,
+      const TransformConfiguration &transform,
+      const ColorTransformConfiguration &color_transform,
+      const pc::float4x4 &world_transform = {},
+      std::span<std::byte> render_output = {}) const = 0;
+
+  // projects through an xy table instead of pinhole intrinsics, for
+  // cameras that return their raw data with lens distortion still applied
+  // (e.g. k4a)
+  virtual void project_transform_frame_data(
+      std::span<const uint16_t> input_depth_frame,
+      std::span<const color_bgra> input_bgra_frame, PointCloud &output_cloud,
+      std::shared_ptr<const XyTable> xy_table,
       const TransformConfiguration &transform,
       const ColorTransformConfiguration &color_transform,
       const pc::float4x4 &world_transform = {},
