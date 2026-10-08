@@ -30,6 +30,33 @@ target_include_directories(PlyDevice
   ${TBB_INCLUDE_DIRS}
 )
 
+target_precompile_headers(PlyDevice PRIVATE
+  <algorithm>
+  <atomic>
+  <filesystem>
+  <memory>
+  <mutex>
+  <optional>
+  <ranges>
+  <shared_mutex>
+  <span>
+  <string>
+  <string_view>
+  <variant>
+  <vector>
+  <BS_thread_pool.hpp>
+  <Corrade/Containers/StringView.h>
+  <Corrade/PluginManager/AbstractPlugin.h>
+  <Corrade/PluginManager/Manager.h>
+  <boost/interprocess/file_mapping.hpp>
+  <boost/interprocess/mapped_region.hpp>
+  <miniply.h>
+  <oneapi/tbb/parallel_for.h>
+  <rfl/Literal.hpp>
+  <rfl/TaggedUnion.hpp>
+  <spdlog/logger.h>
+)
+
 # remove the installed directory because its static, we don't need it
 install(CODE [===[
   file(REMOVE_RECURSE "${CMAKE_INSTALL_PREFIX}/PlyDevice/")
