@@ -290,10 +290,13 @@ void CpuBackend::project_transform_frame_data(
   const auto frame_width = color_intrinsics.frame_width;
 
   const auto convert_point_data = [&](int i) -> std::pair<position, color> {
+    const auto depth = input_depth_frame[i];
+    if (depth == 0) {
+      return {filter::invalid_position_value, color{}};
+    }
     const auto px = i % frame_width;
     const auto py = i / frame_width;
-    const auto pos =
-        util::project_2d_to_3d(px, py, input_depth_frame[i], color_intrinsics);
+    const auto pos = util::project_2d_to_3d(px, py, depth, color_intrinsics);
     const auto &rgb = input_rgb_frame[i];
     return {pos, color{rgb.r, rgb.g, rgb.b}};
   };

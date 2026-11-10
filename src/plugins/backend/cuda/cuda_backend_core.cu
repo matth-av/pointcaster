@@ -110,6 +110,9 @@ struct ProjectAndTransform {
       return thrust::make_tuple(filter::invalid_position_value, color{});
     }
     const uint16_t depth = thrust::get<0>(input);
+    if (depth == 0) {
+      return thrust::make_tuple(filter::invalid_position_value, color{});
+    }
     const color_rgb rgb = thrust::get<1>(input);
     const auto &frame_width = color_intrinsics.frame_width;
 
