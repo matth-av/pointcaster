@@ -186,9 +186,8 @@ public:
 
   virtual std::shared_ptr<PointCloud> point_cloud() = 0;
 
-  std::shared_ptr<std::vector<std::byte>> render_data() {
-    return _latest_render_data.load(std::memory_order_acquire);
-  }
+  // the packed render buffer of the latest cloud
+  POINTCASTER_API std::shared_ptr<std::vector<std::byte>> render_data();
 
   virtual void start() = 0;
   virtual void stop() = 0;
@@ -314,6 +313,14 @@ protected:
   std::atomic<size_t> _dropped_frames{0};
   std::atomic<size_t> _frames_processed{0};
 
+  // hand over the cloud this device should be drawn with
+  void set_render_cloud(std::shared_ptr<PointCloud> cloud) {
+    _render_cloud.store(std::move(cloud), std::memory_order_release);
+  }
+
+  std::atomic<std::shared_ptr<PointCloud>> _render_cloud;
+  std::mutex _render_pack_access;
+  std::shared_ptr<PointCloud> _packed_render_cloud;
   std::atomic<std::shared_ptr<std::vector<std::byte>>> _latest_render_data;
 
   void on_pipeline_output(operators::PipelineFramePtr) override {

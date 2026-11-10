@@ -34,7 +34,6 @@ struct DeviceTransformMemory {
   thrust::device_vector<position> output_positions;
   thrust::device_vector<color> output_colors;
   thrust::device_vector<uint32_t> output_indices;
-  thrust::device_vector<std::byte> interleaved_render;
   thrust::device_vector<int> indices;
 
   thrust::device_vector<color_bgra> input_bgra_data;
@@ -50,7 +49,6 @@ struct DeviceTransformMemory {
     output_positions.resize(n);
     output_colors.resize(n);
     output_indices.resize(n);
-    interleaved_render.resize(n * 16);
     indices.resize(n);
     thrust::sequence(indices.begin(), indices.end());
     point_count = n;
@@ -70,7 +68,6 @@ void create_device_memory(const void *owner, const size_t point_count) {
       .output_positions = thrust::device_vector<position>(point_count),
       .output_colors = thrust::device_vector<color>(point_count),
       .output_indices = thrust::device_vector<uint32_t>(point_count),
-      .interleaved_render = thrust::device_vector<std::byte>(point_count * 16),
       .indices = thrust::device_vector<int>(point_count)};
 
   thrust::sequence(new_device_memory.indices.begin(),
@@ -177,19 +174,6 @@ struct BoundsCheck {
   __host__ __device__ bool operator()(const PointT &point) const {
     auto pos = thrust::get<0>(point);
     return filter::is_valid(pos) && filter::in_bounds(pos, params);
-  }
-};
-
-struct InterleaveForRender {
-  const position *positions;
-  const color *colors;
-  std::byte *output;
-
-  __host__ __device__ void operator()(int i) const {
-    memcpy(output + i * 16, &positions[i], 8);
-    memcpy(output + i * 16 + 8, &colors[i], 4);
-    float idx = static_cast<float>(i);
-    memcpy(output + i * 16 + 12, &idx, 4);
   }
 };
 
@@ -311,8 +295,7 @@ void project_transform_frame_data(
     std::span<const color_rgb> input_rgb_frame, PointCloud &output_cloud,
     const CameraIntrinsics &color_intrinsics,
     const TransformConfiguration &transform,
-    const ColorTransformConfiguration &color_transform,
-    std::span<std::byte> render_output) {
+    const ColorTransformConfiguration &color_transform) {
 
   DeviceTransformMemory *device_memory;
   {
@@ -329,8 +312,6 @@ void project_transform_frame_data(
   const auto transform_parameters =
       filter::TransformFilterParameters::from_config(transform,
                                                      color_transform);
-
-  bool output_render_buffer = !render_output.empty();
 
   {
     ProfilingZone copy_zone("CudaBackend::copy_to_device");
@@ -376,21 +357,6 @@ void project_transform_frame_data(
         thrust::cuda::par, device_memory->output_positions.begin(),
         device_memory->output_positions.begin() + new_point_count,
         PositionAsBounds{}, position_bounds{}, MergeBounds{});
-
-    if (output_render_buffer) {
-      // reset indices to sequential for the filtered range
-      thrust::sequence(device_memory->indices.begin(),
-                       device_memory->indices.begin() + new_point_count);
-
-      thrust::for_each(
-          thrust::cuda::par, device_memory->indices.begin(),
-          device_memory->indices.begin() + new_point_count,
-          InterleaveForRender{
-              thrust::raw_pointer_cast(device_memory->output_positions.data()),
-              thrust::raw_pointer_cast(device_memory->output_colors.data()),
-              thrust::raw_pointer_cast(
-                  device_memory->interleaved_render.data())});
-    }
   }
 
   {
@@ -404,13 +370,6 @@ void project_transform_frame_data(
                  output_cloud.colors.begin());
 
     output_cloud.bounds = new_cloud_bounds;
-
-    if (output_render_buffer) {
-      thrust::copy(device_memory->interleaved_render.begin(),
-                   device_memory->interleaved_render.begin() +
-                       new_point_count * 16,
-                   render_output.begin());
-    }
   }
 
   output_cloud.resize(new_point_count);
@@ -422,7 +381,7 @@ void project_transform_frame_data(
     std::shared_ptr<const XyTable> xy_table,
     const TransformConfiguration &transform,
     const ColorTransformConfiguration &color_transform,
-    const pc::float4x4 &world_transform, std::span<std::byte> render_output) {
+    const pc::float4x4 &world_transform) {
 
   DeviceTransformMemory *device_memory;
   {
@@ -446,8 +405,6 @@ void project_transform_frame_data(
   const auto transform_parameters =
       filter::TransformFilterParameters::from_config(transform,
                                                      color_transform);
-
-  bool output_render_buffer = !render_output.empty();
 
   {
     ProfilingZone copy_zone("CudaBackend::copy_to_device");
@@ -511,20 +468,6 @@ void project_transform_frame_data(
         thrust::cuda::par, device_memory->output_positions.begin(),
         device_memory->output_positions.begin() + new_point_count,
         PositionAsBounds{}, position_bounds{}, MergeBounds{});
-
-    if (output_render_buffer) {
-      thrust::sequence(device_memory->indices.begin(),
-                       device_memory->indices.begin() + new_point_count);
-
-      thrust::for_each(
-          thrust::cuda::par, device_memory->indices.begin(),
-          device_memory->indices.begin() + new_point_count,
-          InterleaveForRender{
-              thrust::raw_pointer_cast(device_memory->output_positions.data()),
-              thrust::raw_pointer_cast(device_memory->output_colors.data()),
-              thrust::raw_pointer_cast(
-                  device_memory->interleaved_render.data())});
-    }
   }
 
   {
@@ -538,13 +481,6 @@ void project_transform_frame_data(
                  output_cloud.colors.begin());
 
     output_cloud.bounds = new_cloud_bounds;
-
-    if (output_render_buffer) {
-      thrust::copy(device_memory->interleaved_render.begin(),
-                   device_memory->interleaved_render.begin() +
-                       new_point_count * 16,
-                   render_output.begin());
-    }
   }
 
   output_cloud.resize(new_point_count);

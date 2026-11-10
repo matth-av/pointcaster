@@ -608,18 +608,7 @@ void OrbbecDevice::rgbd_pipeline_thread_work(
             std::span ob_color_data{ob_color_frame_ptr, point_count};
 
             const auto backend_type = current_backend_type();
-            const bool using_cuda = backend_type == BackendType::CUDA;
             backend::BackendPlugin *backend = backend_for(backend_type);
-
-            // for CUDA, pre-allocate render buffer so it can be packed in the
-            // same kernel pass as projection
-            std::shared_ptr<std::vector<std::byte>> cuda_render_buffer;
-            std::span<std::byte> render_output;
-            if (using_cuda) {
-              cuda_render_buffer = std::make_shared<std::vector<std::byte>>(
-                  max_point_count * 16);
-              render_output = *cuda_render_buffer;
-            }
 
             {
               ProfilingZone backend_transform_zone(
@@ -628,24 +617,13 @@ void OrbbecDevice::rgbd_pipeline_thread_work(
                 backend->project_transform_frame_data(
                     ob_depth_data, ob_color_data, *point_cloud,
                     color_intrinsics, device_config.transform,
-                    device_config.color, world, render_output);
+                    device_config.color, world);
               }
             }
 
             feed_operator_pipeline(std::move(point_cloud));
 
-            if (auto *cpu = cpu_backend(); backend && cpu) {
-              if (using_cuda && cuda_render_buffer) {
-                _latest_render_data.store(std::move(cuda_render_buffer),
-                                          std::memory_order_release);
-              } else if (auto processed = _pipeline->latest_cloud()) {
-                auto render_buffer = std::make_shared<std::vector<std::byte>>(
-                    processed->size() * render_vertex_stride(*processed));
-                cpu->pack_render_buffer(*processed, *render_buffer);
-                _latest_render_data.store(std::move(render_buffer),
-                                          std::memory_order_release);
-              }
-            }
+            set_render_cloud(_pipeline->latest_cloud());
 
             notify_point_cloud_updated();
             set_updated_time(steady_clock::now());
@@ -922,15 +900,7 @@ void OrbbecDevice::lidar_pipeline_thread_work(
 
         feed_operator_pipeline(std::move(point_cloud));
 
-        if (auto *cpu = cpu_backend(); cpu) {
-          if (auto processed = _pipeline->latest_cloud()) {
-            auto render_buffer = std::make_shared<std::vector<std::byte>>(
-                processed->size() * render_vertex_stride(*processed));
-            cpu->pack_render_buffer(*processed, *render_buffer);
-            _latest_render_data.store(std::move(render_buffer),
-                                      std::memory_order_release);
-          }
-        }
+        set_render_cloud(_pipeline->latest_cloud());
 
         notify_point_cloud_updated();
         set_updated_time(steady_clock::now());

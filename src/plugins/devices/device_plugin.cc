@@ -71,6 +71,21 @@ backend::BackendPlugin *DevicePlugin::cpu_backend() const {
   return _backends.cpu();
 }
 
+std::shared_ptr<std::vector<std::byte>> DevicePlugin::render_data() {
+  auto cloud = _render_cloud.load(std::memory_order_acquire);
+  if (!cloud) return _latest_render_data.load(std::memory_order_acquire);
+
+  std::scoped_lock lock(_render_pack_access);
+  if (cloud != _packed_render_cloud) {
+    auto buffer = std::make_shared<std::vector<std::byte>>(
+        cloud->size() * render_vertex_stride(*cloud));
+    if (auto *cpu = cpu_backend()) cpu->pack_render_buffer(*cloud, *buffer);
+    _latest_render_data.store(std::move(buffer), std::memory_order_release);
+    _packed_render_cloud = std::move(cloud);
+  }
+  return _latest_render_data.load(std::memory_order_acquire);
+}
+
 void DevicePlugin::update_config(const DeviceConfigurationVariant &config) {
   _config = config;
   std::visit(

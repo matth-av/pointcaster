@@ -36,8 +36,7 @@ public:
       const CameraIntrinsics &color_intrinsics,
       const TransformConfiguration &transform,
       const ColorTransformConfiguration &color_transform,
-      const pc::float4x4 &world_transform,
-      std::span<std::byte> render_output) const override;
+      const pc::float4x4 &world_transform) const override;
 
   void project_transform_frame_data(
       std::span<const uint16_t> input_depth_frame,
@@ -45,8 +44,7 @@ public:
       std::shared_ptr<const XyTable> xy_table,
       const TransformConfiguration &transform,
       const ColorTransformConfiguration &color_transform,
-      const pc::float4x4 &world_transform,
-      std::span<std::byte> render_output) const override;
+      const pc::float4x4 &world_transform) const override;
 
   void pack_render_buffer(const PointCloud &cloud,
                           std::span<std::byte> output) const override;

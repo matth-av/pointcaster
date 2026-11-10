@@ -17,8 +17,7 @@ void project_transform_frame_data(
     std::span<const color_rgb> input_rgb_frame, PointCloud &output_cloud,
     const CameraIntrinsics &color_intrinsics,
     const TransformConfiguration &transform,
-    const ColorTransformConfiguration &color_transform,
-    std::span<std::byte> render_output = {});
+    const ColorTransformConfiguration &color_transform);
 
 void project_transform_frame_data(
     const void *owner, std::span<const uint16_t> input_depth_frame,
@@ -26,8 +25,7 @@ void project_transform_frame_data(
     std::shared_ptr<const XyTable> xy_table,
     const TransformConfiguration &transform,
     const ColorTransformConfiguration &color_transform,
-    const pc::float4x4 &world_transform = {},
-    std::span<std::byte> render_output = {});
+    const pc::float4x4 &world_transform = {});
 
 BoundsFilterResult filter_to_bounds(const void *owner,
                                     const PointCloud &input_cloud,

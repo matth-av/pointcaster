@@ -450,13 +450,7 @@ void PlyDevice::on_pipeline_output(operators::PipelineFramePtr output_frame) {
   if (!output_frame) return;
   auto cloud = output_frame->cloud;
   if (!cloud) return;
-  // TODO maybe we need conditional rendering?
-  if (auto *cpu = cpu_backend()) {
-    auto buf = std::make_shared<std::vector<std::byte>>(
-        cloud->size() * render_vertex_stride(*cloud));
-    cpu->pack_render_buffer(*cloud, *buf);
-    _latest_render_data.store(std::move(buf), std::memory_order_release);
-  }
+  set_render_cloud(cloud);
   _current_point_cloud.store(std::move(cloud), std::memory_order_release);
   notify_point_cloud_updated();
 }

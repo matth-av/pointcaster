@@ -24,12 +24,12 @@ void CudaBackend::project_transform_frame_data(
     std::span<const color_rgb> input_rgb_frame, PointCloud &output_cloud,
     const CameraIntrinsics &color_intrinsics,
     const TransformConfiguration &transform,
-    const ColorTransformConfiguration &color_transform, const pc::float4x4 &,
-    std::span<std::byte> render_output) const {
+    const ColorTransformConfiguration &color_transform,
+    const pc::float4x4 &) const {
   try {
     cuda::project_transform_frame_data(
         this, input_depth_frame, input_rgb_frame, output_cloud,
-        color_intrinsics, transform, color_transform, render_output);
+        color_intrinsics, transform, color_transform);
   } catch (const std::exception &e) {
     pc::logger()->error("CUDA backend error: {}", e.what());
   } catch (...) {
@@ -43,13 +43,11 @@ void CudaBackend::project_transform_frame_data(
     std::shared_ptr<const XyTable> xy_table,
     const TransformConfiguration &transform,
     const ColorTransformConfiguration &color_transform,
-    const pc::float4x4 &world_transform,
-    std::span<std::byte> render_output) const {
+    const pc::float4x4 &world_transform) const {
   try {
     cuda::project_transform_frame_data(
         this, input_depth_frame, input_bgra_frame, output_cloud,
-        std::move(xy_table), transform, color_transform, world_transform,
-        render_output);
+        std::move(xy_table), transform, color_transform, world_transform);
   } catch (const std::exception &e) {
     pc::logger()->error("CUDA backend error: {}", e.what());
   } catch (...) {
