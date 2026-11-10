@@ -650,7 +650,9 @@ void OrbbecDevice::rgbd_pipeline_thread_work(
 
             notify_point_cloud_updated();
             set_updated_time(steady_clock::now());
-          });
+          },
+          // a live frame goes ahead of bulk work waiting in the pool
+          BS::pr::high);
     }
 
     // wait for detached processing tasks to finish before cleanup

@@ -3,17 +3,19 @@
 #include <pointcaster/task_pool.h>
 #include <thread>
 
+namespace {
+std::size_t task_pool_default_size() {
+  const auto hardware_threads = std::thread::hardware_concurrency();
+  return hardware_threads > 2 ? hardware_threads - 2 : 1;
+}
+} // namespace
+
 namespace pc {
 
-BS::thread_pool<> &task_pool() {
+BS::priority_thread_pool &task_pool() {
   // constructed on first use, at the default size until preferences apply
-  static BS::thread_pool<> pool{task_pool_default_size()};
+  static BS::priority_thread_pool pool{task_pool_default_size()};
   return pool;
-}
-
-std::size_t task_pool_default_size() {
-  const auto hardware_threads = std::thread::hardware_concurrency() - 2;
-  return hardware_threads > 0 ? hardware_threads : 1;
 }
 
 void set_task_pool_size(std::size_t thread_count) {
