@@ -78,6 +78,9 @@ private:
 
   std::shared_ptr<PointCloud> _input_cloud;
 
+  pc::float4x4 _world_transform{};
+  void refresh_world_transform();
+
   std::atomic<bool> _force_reprocess{false};
 
   std::atomic<std::shared_ptr<PointCloud>> _current_point_cloud{

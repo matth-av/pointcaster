@@ -60,6 +60,7 @@ bool PlyDevice::load(std::string_view url) {
   // TODO replace the lock zone and this deferred lock with a
   // tracy lockable to watch it idiomatically instead
 
+  refresh_world_transform();
   std::unique_lock lock(_device_mutex, std::defer_lock);
   {
     // the tick thread holds this lock while it reads a frame that isn't
@@ -178,6 +179,7 @@ void PlyDevice::reprocess() {
 }
 
 void PlyDevice::tick(float delta_time) {
+  refresh_world_transform();
   std::lock_guard lock(_device_mutex);
 
   if (_force_reprocess.exchange(false, std::memory_order_acq_rel)) {
@@ -250,6 +252,7 @@ size_t PlyDevice::frame_count() const {
 void PlyDevice::on_config_field_changed(std::string_view path) {
   DevicePlugin::on_config_field_changed(path);
 
+  refresh_world_transform();
   std::unique_lock lock(_device_mutex);
   auto &config = std::get<PlyDeviceConfiguration>(_config);
 
@@ -383,6 +386,29 @@ std::shared_ptr<PointCloud> PlyDevice::point_cloud() {
   return _current_point_cloud.load(std::memory_order_acquire);
 }
 
+// resolves the device's world transform from the workspace config without
+// holding the _device_mutex
+void PlyDevice::refresh_world_transform() {
+  if (!_workspace) return;
+  std::string device_id;
+  {
+    std::lock_guard lock(_device_mutex);
+    if (!std::holds_alternative<PlyDeviceConfiguration>(_config)) return;
+    device_id = std::get<PlyDeviceConfiguration>(_config).id;
+  }
+  pc::float4x4 world;
+  {
+    ProfilingZone world_zone("PlyDevice::resolve_world_transform");
+    std::scoped_lock lock(_workspace->config_access);
+    world =
+        pc::devices::effective_world_transform(_workspace->config, device_id);
+  }
+  std::lock_guard lock(_device_mutex);
+  if (world == _world_transform) return;
+  _world_transform = world;
+  if (_input_cloud) _force_reprocess.store(true, std::memory_order_release);
+}
+
 void PlyDevice::apply_transform() {
   pc::logger()->trace("PlyDevice::apply_transform: enter tid={}",
                       std::hash<std::thread::id>{}(std::this_thread::get_id()));
@@ -404,18 +430,10 @@ void PlyDevice::apply_transform() {
   }
 
   pc::logger()->trace("PlyDevice::apply_transform: id='{}' points={}, "
-                      "resolving world transform",
+                      "transforming",
                       config.id, point_count);
 
-  pc::float4x4 world;
-  {
-    ProfilingZone world_zone("PlyDevice::resolve_world_transform");
-    std::scoped_lock lock(_workspace->config_access);
-    world =
-        pc::devices::effective_world_transform(_workspace->config, config.id);
-  }
-  pc::logger()->trace(
-      "PlyDevice::apply_transform: world resolved, transforming");
+  const pc::float4x4 world = _world_transform;
 
   auto transformed_cloud = std::make_shared<PointCloud>();
   transformed_cloud->resize(point_count);

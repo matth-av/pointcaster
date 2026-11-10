@@ -319,7 +319,6 @@ void OrbbecDevice::stop_sync() {
   pc::logger()->trace("Running 'stop_sync()'");
   if (!_running_pipeline) return;
   auto config = std::get<OrbbecDeviceConfiguration>(this->config_variant());
-  std::lock_guard lock(orbbec_context().device_api_access);
   if (!_pipeline_thread.joinable()) return;
   pc::logger()->info("Closing OrbbecDevice {}", config.network.ip_address);
   pc::logger()->trace("Joining pipeline thread");
@@ -989,15 +988,17 @@ void OrbbecDevice::timeout_thread_work(std::stop_token stop_token) {
     const bool has_seen_a_frame = last_frame_time != steady_clock::time_point{};
 
     // we can update metrics on this thread too
+    const auto device_id = get_id();
     pc::metrics::set_gauge("pointcaster_orbbec_pipeline_hertz",
-                           _pipeline_fps_ema.load(), {{"device_id", get_id()}});
+                           _pipeline_fps_ema.load(),
+                           {{"device_id", device_id}});
 
     if (_running_pipeline && !_in_error_state) {
       if (!has_seen_a_frame) {
         sleep_until_stopped(check_interval);
         continue;
       }
-      if (now - last_frame_time >= error_timeout) {
+      if (in_any_session() && now - last_frame_time >= error_timeout) {
         set_error_state(true);
         pc::logger()->error(
             "Orbbec device '{}' entered error state. Attempting restart...",

@@ -131,21 +131,29 @@ void OperatorHost::rebuild_pipeline(
       operators::build_worker_chains(configs, pipeline_concurrency(), *this,
                                      *_workspace);
 
-  std::scoped_lock lock(_pipeline_mutex);
-  if (_pipeline) {
-    _pipeline->stop();
+  std::unique_ptr<operators::ConcurrentOperatorPipeline> old_pipeline;
+  {
+    std::scoped_lock lock(_pipeline_mutex);
+    old_pipeline = std::move(_pipeline);
+  }
+  if (old_pipeline) {
+    old_pipeline->stop();
     std::scoped_lock plugin_lock(pc::plugin_manager_access());
-    _pipeline.reset();
+    old_pipeline.reset();
   }
 
-  _pipeline = std::make_unique<operators::ConcurrentOperatorPipeline>(
+  auto new_pipeline = std::make_unique<operators::ConcurrentOperatorPipeline>(
       std::move(pipeline_worker_chains));
 
-  _pipeline->set_on_complete([this](PipelineFramePtr output_frame) {
+  new_pipeline->set_on_complete([this](PipelineFramePtr output_frame) {
     on_pipeline_output(std::move(output_frame));
   });
 
-  _pipeline->start();
+  {
+    std::scoped_lock lock(_pipeline_mutex);
+    _pipeline = std::move(new_pipeline);
+    _pipeline->start();
+  }
 }
 
 void OperatorHost::feed_operator_pipeline(std::shared_ptr<PointCloud> cloud) {

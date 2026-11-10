@@ -204,37 +204,47 @@ void Workspace::rebuild_config_registry() {
                                                const std::string &group_id,
                                                const std::string &field_path,
                                                const pc::ConfigValue &value) {
-    for (auto &device_variant : config.devices) {
-      std::visit(
-          [&](auto &device_config) {
-            if (device_config.parent_id == group_id) {
-              const std::string device_address =
-                  pc::devices::device_address(config, device_config.id);
-              config_registry.set("device/" + device_address + "/" + field_path,
-                                  value);
-              // For current_frame, call on_config_field_changed directly so
-              // the frame loads before the tick can overwrite the config value
-              if (field_path == "sequence/current_frame") {
-                for (auto &device_plugin : devices) {
-                  if (!device_plugin) continue;
-                  const auto [did, _] = pc::devices::device_info_from_variant(
-                      device_plugin->config_variant());
-                  if (std::string(did) == device_config.id) {
-                    device_plugin->on_config_field_changed(field_path);
-                    break;
-                  }
-                }
+    struct Child {
+      std::string id;
+      std::string address;
+      bool is_device;
+    };
+    std::vector<Child> children;
+    {
+      std::scoped_lock lock(config_access);
+      for (auto &device_variant : config.devices) {
+        std::visit(
+            [&](auto &device_config) {
+              if (device_config.parent_id == group_id) {
+                children.push_back(
+                    {device_config.id,
+                     pc::devices::device_address(config, device_config.id),
+                     true});
               }
-            }
-          },
-          device_variant);
+            },
+            device_variant);
+      }
+      for (auto &child_group : config.device_groups) {
+        if (child_group.parent_id == group_id) {
+          children.push_back(
+              {child_group.id,
+               pc::devices::device_address(config, child_group.id), false});
+        }
+      }
     }
-    for (auto &child_group : config.device_groups) {
-      if (child_group.parent_id == group_id) {
-        const std::string child_group_address =
-            pc::devices::device_address(config, child_group.id);
-        config_registry.set("device/" + child_group_address + "/" + field_path,
-                            value);
+    for (const auto &child : children) {
+      config_registry.set("device/" + child.address + "/" + field_path, value);
+      // For current_frame, call on_config_field_changed directly so
+      // the frame loads before the tick can overwrite the config value
+      if (!child.is_device || field_path != "sequence/current_frame") continue;
+      for (auto &device_plugin : devices) {
+        if (!device_plugin) continue;
+        const auto [did, _] = pc::devices::device_info_from_variant(
+            device_plugin->config_variant());
+        if (std::string(did) == child.id) {
+          device_plugin->on_config_field_changed(field_path);
+          break;
+        }
       }
     }
   };
@@ -302,6 +312,7 @@ void Workspace::sync_sessions() {
   }
 
   std::vector<std::unique_ptr<Session>> deleted_sessions;
+  std::vector<std::pair<Session *, const SessionConfiguration *>> to_update;
   {
     std::scoped_lock lock(sessions_access);
 
@@ -312,8 +323,8 @@ void Workspace::sync_sessions() {
         sessions.emplace(session_config.id,
                          std::make_unique<Session>(*this, session_config));
       } else if (it->second) {
-        // push updated config into existing sessions
-        it->second->update_config(session_config);
+        // push updated config into existing sessions (below, unlocked)
+        to_update.emplace_back(it->second.get(), &session_config);
       }
     }
 
@@ -328,6 +339,10 @@ void Workspace::sync_sessions() {
       deleted_sessions.push_back(std::move(it->second));
       it = sessions.erase(it);
     }
+  }
+
+  for (auto &[session, session_config] : to_update) {
+    session->update_config(*session_config);
   }
 
   for (auto &session : deleted_sessions) {
