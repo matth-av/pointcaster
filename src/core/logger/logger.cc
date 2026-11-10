@@ -73,7 +73,7 @@ static std::shared_ptr<spdlog::logger> &get_logger_impl() {
   return instance;
 }
 
-static std::filesystem::path logs_dir(std::string_view target_name) {
+static std::filesystem::path log_directory_for(std::string_view target_name) {
   const auto get_env_path =
       [](const char *name) -> std::optional<std::filesystem::path> {
     if (!name) return std::nullopt;
@@ -101,7 +101,7 @@ static std::filesystem::path logs_dir(std::string_view target_name) {
 }
 
 static std::filesystem::path log_file_path(std::string_view target_name) {
-  const auto dir = logs_dir(target_name);
+  const auto dir = log_directory_for(target_name);
   return dir / (std::string(target_name) + ".log");
 }
 
@@ -211,6 +211,16 @@ void disable_file_logging() {
 
   pc::log::detail::file_sink.reset();
   logger->info("disabled file logging");
+}
+
+std::optional<std::filesystem::path> log_directory() {
+  if (!pc::log::detail::file_sink) return std::nullopt;
+  try {
+    return std::filesystem::path(pc::log::detail::file_sink->filename())
+        .parent_path();
+  } catch (...) {
+    return std::nullopt;
+  }
 }
 
 std::vector<LogEntry> take_log_entries() {

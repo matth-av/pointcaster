@@ -8,6 +8,7 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <string_view>
 
@@ -18,6 +19,8 @@ POINTCASTER_CORE_EXPORT void set_log_level(spdlog::level::level_enum lvl);
 
 POINTCASTER_CORE_EXPORT void enable_file_logging(std::string_view target = "");
 POINTCASTER_CORE_EXPORT void disable_file_logging();
+
+POINTCASTER_CORE_EXPORT std::optional<std::filesystem::path> log_directory();
 
 POINTCASTER_CORE_EXPORT const std::string_view log_file_target_name();
 POINTCASTER_CORE_EXPORT void set_log_file_target_name(std::string_view name);

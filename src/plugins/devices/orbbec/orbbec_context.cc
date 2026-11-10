@@ -18,6 +18,21 @@
 namespace {
 moodycamel::ConcurrentQueue<std::function<void()>> on_ready_callbacks{};
 
+// by default the sdk writes its own log to a 'Log' directory inside whatever
+// directory pointcaster was started from. this setup func makes it go beside
+// our own log instead, and if we aren't logging to a file, neither does the sdk
+void configure_sdk_file_logging() {
+  if (const auto directory = pc::log_directory()) {
+    const auto sdk_log_directory = *directory / "orbbec";
+    std::error_code ec;
+    std::filesystem::create_directories(sdk_log_directory, ec);
+    ob::Context::setLoggerToFile(OB_LOG_SEVERITY_INFO,
+                                 sdk_log_directory.string().c_str());
+  } else {
+    ob::Context::setLoggerToFile(OB_LOG_SEVERITY_OFF, "");
+  }
+}
+
 #if POINTCASTER_ORBBEC_SDK_VERSION >= 2
 // sdk v2 loads a bunch of other libs from an 'extensions' directory packaged
 // beside this plugin variant's binary (sdk v1 has no extensions concept, it
@@ -56,6 +71,7 @@ void ObContext::init_async() {
     std::shared_ptr<ob::Context> local;
 
     try {
+      configure_sdk_file_logging();
 #if POINTCASTER_ORBBEC_SDK_VERSION >= 2
       configure_extensions_directory();
 #endif
@@ -262,10 +278,10 @@ void ObContext::discover_devices() {
                                ? found_device.ip
                                : found_device.connection_type;
     pc::logger()->trace("Discovered '{}' via {} (serial: {}, uid: {}, "
-                       "vendor:product 0x{:04x}:0x{:04x})",
-                       found_device.name, location, found_device.serial_num,
-                       found_device.id, found_device.vendor_id,
-                       found_device.product_id);
+                        "vendor:product 0x{:04x}:0x{:04x})",
+                        found_device.name, location, found_device.serial_num,
+                        found_device.id, found_device.vendor_id,
+                        found_device.product_id);
   }
   if (found_devices.empty()) {
     pc::logger()->info("Orbbec discovery found no devices");
