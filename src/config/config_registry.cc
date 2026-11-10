@@ -4,13 +4,30 @@
 #include <core/logger/logger.h>
 #include <set>
 #include <string>
+#include <utility>
 #include <variant>
 
 namespace pc {
 
 void ConfigRegistry::register_field(std::string path, Field field) {
   std::unique_lock lock(_mutex);
-  _fields.insert_or_assign(std::move(path), std::move(field));
+  auto &fields = _rebuilt_fields ? *_rebuilt_fields : _fields;
+  fields.insert_or_assign(std::move(path), std::move(field));
+}
+
+void ConfigRegistry::begin_rebuild() {
+  std::unique_lock lock(_mutex);
+  _rebuilt_fields.emplace();
+}
+
+void ConfigRegistry::end_rebuild() {
+  StringMap<Field> replaced_fields;
+  {
+    std::unique_lock lock(_mutex);
+    if (!_rebuilt_fields) return;
+    replaced_fields = std::exchange(_fields, std::move(*_rebuilt_fields));
+    _rebuilt_fields.reset();
+  }
 }
 
 void ConfigRegistry::unregister(std::string_view prefix) {

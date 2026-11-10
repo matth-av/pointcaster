@@ -38,6 +38,12 @@ public:
 
   POINTCASTER_CONFIG_EXPORT void clear();
 
+  // fields registered between these two replace every current field at once,
+  // so a set or get from another thread (OSC, publishers) never finds a path
+  // missing while the registry is rebuilt
+  POINTCASTER_CONFIG_EXPORT void begin_rebuild();
+  POINTCASTER_CONFIG_EXPORT void end_rebuild();
+
   // returns false if path not found, or if the field is read-only
   [[maybe_unused]] POINTCASTER_CONFIG_EXPORT bool set(std::string_view path,
                                                       ConfigValue value);
@@ -72,6 +78,7 @@ private:
 
   mutable std::shared_mutex _mutex;
   StringMap<Field> _fields;
+  std::optional<StringMap<Field>> _rebuilt_fields;
   std::vector<Subscription> _subs;
   SubscriptionId _next_subscription_id = 1;
 };

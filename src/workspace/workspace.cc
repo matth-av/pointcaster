@@ -166,7 +166,9 @@ void register_operators(
 // it probs doesn't need to be rebuilt often
 void Workspace::rebuild_config_registry() {
   pc::profiling::ProfilingZone zone("Workspace::rebuild_config_registry");
-  config_registry.clear();
+  // the new fields replace the old ones all at once at the end, since OSC can
+  // be setting paths from its own thread while they're registered
+  config_registry.begin_rebuild();
 
   // register configs for session values
   for (auto &session_config : config.sessions) {
@@ -299,6 +301,8 @@ void Workspace::rebuild_config_registry() {
                                            "sequence/current_frame", value);
              }});
   }
+
+  config_registry.end_rebuild();
 }
 
 void Workspace::sync_sessions() {
