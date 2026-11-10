@@ -147,5 +147,16 @@ SettingsPage {
                 onToggled: AppSettings.enableTracyProfiling = checked
             }
         }
+
+        SettingsRow {
+            label: "System tracing"
+            description: "Enable call stack sampling and thread scheduling to the profile. This can cause stutters itself. Requires restart."
+            enabled: !!AppSettings.enableTracyProfiling
+
+            CheckBox {
+                checked: !!AppSettings.enableTracySystemTracing
+                onToggled: AppSettings.enableTracySystemTracing = checked
+            }
+        }
     }
 }

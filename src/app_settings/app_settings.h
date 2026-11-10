@@ -54,6 +54,9 @@ class APP_SETTINGS_API AppSettings final : public QObject {
 
   Q_PROPERTY(bool enableTracyProfiling READ enableTracyProfiling WRITE
                  setEnableTracyProfiling NOTIFY enableTracyProfilingChanged)
+  Q_PROPERTY(bool enableTracySystemTracing READ enableTracySystemTracing WRITE
+                 setEnableTracySystemTracing NOTIFY
+                     enableTracySystemTracingChanged)
 
   Q_PROPERTY(int workerThreads READ workerThreads WRITE setWorkerThreads NOTIFY
                  workerThreadsChanged)
@@ -127,6 +130,9 @@ public:
   bool enableTracyProfiling() const;
   void setEnableTracyProfiling(bool value);
 
+  bool enableTracySystemTracing() const;
+  void setEnableTracySystemTracing(bool value);
+
   // -- Performance
 
   // threads for device processing and sequence loading, defaulting to every
@@ -166,6 +172,7 @@ signals:
   void prometheusAddressChanged();
 
   void enableTracyProfilingChanged();
+  void enableTracySystemTracingChanged();
 
   void workerThreadsChanged();
   void fileWriterThreadsChanged();
@@ -205,6 +212,7 @@ private:
   QString m_prometheusAddress;
 
   bool m_enableTracyProfiling = false;
+  bool m_enableTracySystemTracing = false;
 
   int m_workerThreads = 1;
   int m_fileWriterThreads = 1;

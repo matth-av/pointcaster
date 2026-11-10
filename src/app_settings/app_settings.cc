@@ -60,7 +60,10 @@ AppSettings::AppSettings(QObject *parent)
       m_settings.value("prometheusAddress", QStringLiteral("0.0.0.0:8080"))
           .toString();
 
-  m_enableTracyProfiling = m_settings.value("tracyEnabled", true).toBool();
+  // tracy is off by default because otherwise every thread exit hiccups
+  m_enableTracyProfiling = m_settings.value("tracyEnabled", false).toBool();
+  m_enableTracySystemTracing =
+      m_settings.value("tracySystemTracingEnabled", false).toBool();
 
   m_workerThreads = std::max(
       1, m_settings.value("workerThreads", defaultWorkerThreads()).toInt());
@@ -430,6 +433,25 @@ void AppSettings::setEnableTracyProfiling(bool value) {
   m_enableTracyProfiling = value;
   write("tracyEnabled", m_enableTracyProfiling);
   emit enableTracyProfilingChanged();
+}
+
+bool AppSettings::enableTracySystemTracing() const {
+  return m_enableTracySystemTracing;
+}
+
+void AppSettings::setEnableTracySystemTracing(bool value) {
+  if (value == m_enableTracySystemTracing) return;
+
+  if (!onObjectThread(this)) {
+    QMetaObject::invokeMethod(
+        this, [this, value] { setEnableTracySystemTracing(value); },
+        Qt::QueuedConnection);
+    return;
+  }
+
+  m_enableTracySystemTracing = value;
+  write("tracySystemTracingEnabled", m_enableTracySystemTracing);
+  emit enableTracySystemTracingChanged();
 }
 
 QVariant AppSettings::value(const QString &key,

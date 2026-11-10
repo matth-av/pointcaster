@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
 
   // tracy profiling is enabled or disabled for the entire application run
   if (app_settings->enableTracyProfiling()) {
-    pc::profiling::start_profiler();
+    pc::profiling::start_profiler(app_settings->enableTracySystemTracing());
   }
 
   pc::logger()->trace("Starting QGuiApplication...");
